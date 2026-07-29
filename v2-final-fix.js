@@ -80,10 +80,10 @@
     });
   }
   const seasons = [
-    { name: '겨울 · 1월', zones: [[245,595,82,58,'P4 가덕등대 남단 · 매우 높음'],[263,440,62,46,'P3 · 높음'],[208,330,55,42,'P1 · 주의'],[305,280,45,34,'P2/P6/P7 · 관찰']] },
-    { name: '봄 · 5월', zones: [[245,580,90,64,'P4 가덕등대 남단 · 매우 높음'],[280,425,68,50,'P3 · 높음'],[220,315,58,44,'P1 · 주의'],[340,250,50,36,'P7 북동측 · 관찰']] },
-    { name: '여름 · 7–9월', zones: [[245,610,54,38,'P4 가덕등대 남단 · 주의'],[263,440,0,0,''],[208,330,0,0,''],[305,280,0,0,'']] },
-    { name: '가을 · 11월', zones: [[245,590,76,52,'P4 가덕등대 남단 · 높음'],[250,450,58,42,'P3 · 주의'],[215,340,48,36,'P1 · 관찰'],[315,275,42,32,'P6/P7 · 관찰']] }
+    { name: '겨울 · 1월', zones: [[245,595,82,58,'가덕도 남단 출몰지역 · 매우 높음'],[263,440,62,46,'가덕수로 출몰지역 · 높음'],[208,330,55,42,'눌차도 남서 출몰지역 · 주의'],[305,280,45,34,'진우도 인근 출몰지역 · 관찰']] },
+    { name: '봄 · 5월', zones: [[245,580,90,64,'가덕도 남단 출몰지역 · 매우 높음'],[280,425,68,50,'가덕수로 출몰지역 · 높음'],[220,315,58,44,'눌차도 남서 출몰지역 · 주의'],[340,250,50,36,'진우도 북동 출몰지역 · 관찰']] },
+    { name: '여름 · 7–9월', zones: [[245,610,54,38,'가덕도 남단 출몰지역 · 주의'],[263,440,0,0,''],[208,330,0,0,''],[305,280,0,0,'']] },
+    { name: '가을 · 11월', zones: [[245,590,76,52,'가덕도 남단 출몰지역 · 높음'],[250,450,58,42,'가덕수로 출몰지역 · 주의'],[215,340,48,36,'눌차도 남서 출몰지역 · 관찰'],[315,275,42,32,'진우도 인근 출몰지역 · 관찰']] }
   ];
   let seasonIndex = 0;
   // A refresh keeps the seasonal survey pattern, while incorporating a small,
@@ -124,13 +124,14 @@
     const safeY = Math.min(720, zoneBottom + routeOffset);
     const leftGate = { x: 150, y: Math.min(680, safeY - 10) };
     const rightGate = { x: 585, y: Math.min(650, safeY - 35) };
-    const portExit = port => {
-      if (port.x > 600) return {x:560,y:370}; // 다대포 남서측 항만 입구
-      if (port.x < 120) return {x:150,y:535}; // 가덕도 동측 개방 수역
-      if (port.x > 380) return {x:380,y:400}; // 눌차도 남서측 수로
-      return {x:260,y:400};                   // 진우도 남서측 수로
+    const portBranch = port => {
+      if (port.x > 600) return [port,{x:610,y:260},{x:560,y:370},{x:540,y:440}];
+      if (port.x < 120) return [port,{x:120,y:515},{x:150,y:535},{x:180,y:560}];
+      if (port.x > 380) return [port,{x:405,y:350},{x:380,y:410},{x:410,y:520}];
+      return [port,{x:285,y:320},{x:260,y:400},{x:250,y:520}];
     };
-    const startExit = portExit(start), endExit = portExit(end);
+    const startBranch = portBranch(start);
+    const endBranch = portBranch(end);
 
     // The slow route deliberately uses the existing shipping corridor.  It may
     // cross a warning ellipse, but it still stays below the mapped islets.
@@ -138,13 +139,15 @@
       // Cross only the southernmost active ecology zone, which lies in open
       // water, then return to the same charted sea corridor.
       const target = zones.reduce((best, zone) => !best || zone.y > best.y ? zone : best, null) || {x:300,y:560};
-      const points = [start, startExit, {x:470,y:500}, {x:target.x,y:target.y}, endExit, end];
+      const startApproach = start.x > target.x ? {x:470,y:500} : {x:180,y:560};
+      const endApproach = end.x > target.x ? {x:470,y:500} : {x:180,y:560};
+      const points = [...startBranch, startApproach, {x:target.x,y:target.y}, endApproach, ...endBranch.slice().reverse()];
       return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${point.y}`).join(' ');
     }
 
     const points = start.x > end.x
-      ? [start, startExit, rightGate, {x:470,y:safeY}, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, leftGate, endExit, end]
-      : [start, startExit, leftGate, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, {x:470,y:safeY}, rightGate, endExit, end];
+      ? [...startBranch, rightGate, {x:470,y:safeY}, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, leftGate, ...endBranch.slice().reverse()]
+      : [...startBranch, leftGate, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, {x:470,y:safeY}, rightGate, ...endBranch.slice().reverse()];
     return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${Math.min(735, point.y)}`).join(' ');
   }
 
