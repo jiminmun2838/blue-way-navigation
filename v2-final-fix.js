@@ -112,51 +112,48 @@
     if (title) title.innerHTML = `다대포 → 가덕도 대항<small>${season.name} · ${reason} · 조사 정점 기반 관심구역</small>`;
   }
 
-  function buildMarinePath(id, start, end) {
+  const pairRoutes = {
+    'dadaepo-gadeok': [
+      [645,190],[610,260],[560,360],[515,440],[430,500],
+      [330,520],[250,500],[180,535],[120,515],[83,500]
+    ],
+    'dadaepo-noksado': [
+      [645,190],[610,250],[560,330],[500,370],[450,360],[425,305]
+    ],
+    'dadaepo-jinudo': [
+      [645,190],[610,250],[560,330],[490,380],[400,380],[340,340],[300,260]
+    ],
+    'gadeok-noksado': [
+      [83,500],[120,515],[180,535],[220,500],[280,510],
+      [350,490],[410,440],[440,380],[425,305]
+    ],
+    'gadeok-jinudo': [
+      [83,500],[120,515],[180,535],[200,510],[260,520],
+      [320,480],[350,420],[340,340],[300,260]
+    ],
+    'jinudo-noksado': [
+      [300,260],[330,340],[380,380],[425,360],[425,305]
+    ]
+  };
+
+  function buildMarinePath(id, start, end, startId, endId) {
     if (start.x === end.x && start.y === end.y) return `M${start.x} ${start.y}`;
+    const key = [startId, endId].sort().join('-');
+    let points = (pairRoutes[key] || [[start.x,start.y],[end.x,end.y]]).map(([x,y]) => ({x,y}));
+    const first = points[0];
+    if (first.x !== start.x || first.y !== start.y) points.reverse();
 
-    // The lower half of this cropped chart is continuous open water.  Every
-    // generated route first joins that surveyed corridor, so no straight
-    // segment can cut across the large islands or the central islets.
-    const zones = visibleZones();
-    const zoneBottom = Math.max(515, ...zones.map(zone => zone.y + zone.ry));
-    const routeOffset = id === 'outer' ? 92 : id === 'north' ? 52 : 68;
-    const safeY = Math.min(720, zoneBottom + routeOffset);
-    const leftGate = { x: 150, y: Math.min(680, safeY - 10) };
-    const rightGate = { x: 585, y: Math.min(650, safeY - 35) };
-    const portBranch = port => {
-      if (port.x > 600) return [port,{x:610,y:260},{x:560,y:370},{x:540,y:440}];
-      if (port.x < 120) return [port,{x:120,y:515},{x:150,y:535},{x:180,y:560}];
-      if (port.x > 380) return [port,{x:405,y:350},{x:380,y:410},{x:410,y:520}];
-      return [port,{x:285,y:320},{x:260,y:400},{x:250,y:520}];
-    };
-    const startBranch = portBranch(start);
-    const endBranch = portBranch(end);
-
-    // The slow route deliberately uses the existing shipping corridor.  It may
-    // cross a warning ellipse, but it still stays below the mapped islets.
-    if (id === 'slow') {
-      // Cross only the southernmost active ecology zone, which lies in open
-      // water, then return to the same charted sea corridor.
-      const target = zones.reduce((best, zone) => !best || zone.y > best.y ? zone : best, null) || {x:300,y:560};
-      const startApproach = start.x > target.x ? {x:470,y:500} : {x:180,y:560};
-      const endApproach = end.x > target.x ? {x:470,y:500} : {x:180,y:560};
-      const points = [...startBranch, startApproach, {x:target.x,y:target.y}, endApproach, ...endBranch.slice().reverse()];
-      return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${point.y}`).join(' ');
+    // Route alternatives stay inside the same verified channel.  Only the
+    // open-water middle section is adjusted, avoiding new land intersections.
+    if (id === 'outer') {
+      points = points.map((point, index) => index && index < points.length - 1
+        ? {...point, y:Math.min(690, point.y + 42)}
+        : point);
+    } else if (id === 'north') {
+      points = points.map((point, index) => index > 1 && index < points.length - 2
+        ? {...point, y:point.y + 16}
+        : point);
     }
-
-    const corridor = [
-      leftGate,
-      {x:310,y:safeY + (id === 'outer' ? 18 : 0)},
-      {x:470,y:safeY},
-      rightGate
-    ];
-    const corridorIndex = port => port.x < 120 ? 0 : port.x < 380 ? 1 : port.x < 600 ? 2 : 3;
-    const from = corridorIndex(start), to = corridorIndex(end);
-    const corridorLeg = from <= to
-      ? corridor.slice(from, to + 1)
-      : corridor.slice(to, from + 1).reverse();
-    const points = [...startBranch, ...corridorLeg, ...endBranch.slice().reverse()];
     return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${Math.min(735, point.y)}`).join(' ');
   }
 
@@ -194,7 +191,7 @@
     const startId = $('#v2Start')?.value || 'dadaepo';
     const endId = $('#v2End')?.value || 'gadeok';
     const start = ports[startId], end = ports[endId];
-    const generatedPath = buildMarinePath(id, start, end);
+    const generatedPath = buildMarinePath(id, start, end, startId, endId);
     $('#activePath')?.setAttribute('d', generatedPath);
     $('#basePath')?.setAttribute('d', generatedPath);
     if (id === 'slow') positionSlowBoat();
