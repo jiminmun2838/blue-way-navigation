@@ -114,14 +114,14 @@
 
   const pairRoutes = {
     'dadaepo-gadeok': [
-      [645,190],[610,210],[565,225],[520,260],[500,340],[515,440],[430,500],
+      [645,190],[610,200],[560,200],[505,215],[470,250],[455,320],[515,440],[430,500],
       [330,520],[250,500],[180,535],[120,515],[83,500]
     ],
     'dadaepo-noksado': [
-      [645,190],[610,210],[565,225],[520,260],[470,300],[425,305]
+      [645,190],[610,200],[560,200],[505,215],[470,250],[450,300],[425,305]
     ],
     'dadaepo-jinudo': [
-      [645,190],[610,210],[565,225],[520,260],[470,315],[410,355],[350,335],[300,260]
+      [645,190],[610,200],[560,200],[505,215],[470,250],[430,315],[370,335],[300,260]
     ],
     'gadeok-noksado': [
       [83,500],[120,515],[180,535],[220,500],[280,510],
@@ -135,21 +135,39 @@
       [300,260],[330,340],[380,380],[425,360],[425,305]
     ]
   };
+  const slowPairRoutes = {
+    'dadaepo-gadeok': [
+      [645,190],[610,200],[560,200],[505,215],[470,250],[455,320],
+      [430,400],[350,445],[260,470],[170,500],[83,500]
+    ],
+    'dadaepo-noksado': [
+      [645,190],[610,200],[560,200],[505,215],[470,250],[425,305]
+    ],
+    'dadaepo-jinudo': [
+      [645,190],[610,200],[560,200],[505,215],[470,250],[385,285],[300,260]
+    ],
+    'gadeok-noksado': [
+      [83,500],[150,500],[240,470],[330,440],[400,390],[425,305]
+    ],
+    'gadeok-jinudo': [
+      [83,500],[150,500],[220,480],[300,430],[330,350],[300,260]
+    ],
+    'jinudo-noksado': [
+      [300,260],[350,300],[425,305]
+    ]
+  };
 
   function buildMarinePath(id, start, end, startId, endId) {
     if (start.x === end.x && start.y === end.y) return `M${start.x} ${start.y}`;
     const key = [startId, endId].sort().join('-');
-    let points = (pairRoutes[key] || [[start.x,start.y],[end.x,end.y]]).map(([x,y]) => ({x,y}));
+    const routeTable = id === 'slow' ? slowPairRoutes : pairRoutes;
+    let points = (routeTable[key] || [[start.x,start.y],[end.x,end.y]]).map(([x,y]) => ({x,y}));
     const first = points[0];
     if (first.x !== start.x || first.y !== start.y) points.reverse();
 
     // Route alternatives stay inside the same verified channel.  Only the
     // open-water middle section is adjusted, avoiding new land intersections.
-    if (id === 'eco') {
-      points = points.map((point, index) => index > 2 && index < points.length - 3
-        ? {...point, x:Math.min(690, point.x + 32), y:Math.min(690, point.y + 18)}
-        : point);
-    } else if (id === 'outer') {
+    if (id === 'outer') {
       points = points.map((point, index) => index && index < points.length - 1
         ? {...point, y:Math.min(690, point.y + 42)}
         : point);
