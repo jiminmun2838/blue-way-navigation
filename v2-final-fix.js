@@ -122,6 +122,13 @@
     const safeY = Math.min(720, zoneBottom + routeOffset);
     const leftGate = { x: 150, y: Math.min(680, safeY - 10) };
     const rightGate = { x: 585, y: Math.min(650, safeY - 35) };
+    const portExit = port => {
+      if (port.x > 600) return {x:560,y:370}; // 다대포 남서측 항만 입구
+      if (port.x < 120) return {x:150,y:535}; // 가덕도 동측 개방 수역
+      if (port.x > 380) return {x:430,y:390}; // 눌차도 남측 수로
+      return {x:315,y:390};                   // 진우도 남측 수로
+    };
+    const startExit = portExit(start), endExit = portExit(end);
 
     // The slow route deliberately uses the existing shipping corridor.  It may
     // cross a warning ellipse, but it still stays below the mapped islets.
@@ -131,8 +138,8 @@
     }
 
     const points = start.x > end.x
-      ? [start, rightGate, {x:470,y:safeY}, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, leftGate, end]
-      : [start, leftGate, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, {x:470,y:safeY}, rightGate, end];
+      ? [start, startExit, rightGate, {x:470,y:safeY}, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, leftGate, endExit, end]
+      : [start, startExit, leftGate, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, {x:470,y:safeY}, rightGate, endExit, end];
     return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${Math.min(735, point.y)}`).join(' ');
   }
 
