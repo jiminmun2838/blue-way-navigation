@@ -115,9 +115,7 @@
       const distance = parseFloat(card.querySelector('.metrics div:first-child b')?.textContent || '0');
       const eta = card.querySelector('.metrics div:nth-child(2) b');
       const routeFactor = { eco: .92, slow: .72, outer: .96, north: .82, safety: 0 }[cardRoute] ?? .9;
-      const effectiveSpeed = cardRoute === 'slow'
-        ? Math.min(10, vessel.speed) * routeFactor
-        : vessel.speed * routeFactor;
+      const effectiveSpeed = vessel.speed * routeFactor;
       if (eta && distance && effectiveSpeed) eta.textContent = `${Math.round(distance / effectiveSpeed * 60)}분`;
       if (eta && cardRoute === 'safety') eta.textContent = '재평가';
     });
