@@ -149,6 +149,8 @@
     setTag(endTag, end.x, end.y, `목적 · ${end.name}`);
     renderPorts();
     currentSpeed = route.speed || 0;
+    // Keep the older dashboard timer synchronized with this simulator.
+    if (id === 'slow') map.dataset.liveSpeed = '10.0';
     $('#navState').textContent = route.name;
     $('#command').innerHTML = id === 'slow' ? '보호구간 전 <b>10.0 kn</b> · 구간 안 <b>8.0 kn</b>' : '보호구간을 피해 <b>안전 우회</b> 안내';
     updateSpeed();
@@ -272,6 +274,7 @@
     const target = inside ? 8 : 10;
     slowSpeed += (target - slowSpeed) * 0.14;
     if (Math.abs(target - slowSpeed) < 0.03) slowSpeed = target;
+    map.dataset.liveSpeed = slowSpeed.toFixed(1);
     currentSpeed = slowSpeed;
     $('#command').innerHTML = inside
       ? '상괭이 주의구간 통과 중 · <b>8.0 kn 감속</b>'
