@@ -159,6 +159,14 @@
     sources.appendChild(paper);
   }
 
+  // Older prototype layers append a legend/note after load.  Remove them from
+  // the navigation canvas so the map and its control card have independent space.
+  setTimeout(() => {
+    document.querySelectorAll('.map-footer, .habitat-note, .voice').forEach(element => {
+      element.style.setProperty('display', 'none', 'important');
+    });
+  }, 700);
+
   setInterval(() => {
     if (routeId !== 'slow') return;
     const playing = $('#playBtn')?.textContent.includes('일시정지');
