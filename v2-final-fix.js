@@ -41,6 +41,7 @@
     .endpoint-final{position:absolute;z-index:12;padding:6px 10px;border-radius:8px;background:#062433eb;border:1px solid #75d9d0;color:#fff;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
     .endpoint-final.end{border-color:#9bea75;background:#163c31ed}
     .paper-zone{stroke-width:2;stroke-dasharray:5 4;pointer-events:none}.paper-zone-label{font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3;pointer-events:none}
+    #map.v2-real svg>.hazard,#map.v2-real>.hazard-label{display:none!important}
     #map.v2-real svg #fixedPorts,#map.v2-real svg #fixedPorts .port-point{display:block!important}
     .port-point circle{display:block!important;fill:#e84e4e;stroke:#fff;stroke-width:2}.port-point text{display:block!important;fill:#fff;font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3}
     .port-point.selected circle{fill:#2196f3;stroke:#fff;stroke-width:3}.port-point.both circle{fill:#7867ff}
@@ -86,13 +87,18 @@
   // A refresh keeps the seasonal survey pattern, while incorporating a small,
   // deterministic latest-observation adjustment.  It is not a random jump.
   let predictionVersion = 0;
+  function visibleZones() {
+    return seasons[seasonIndex].zones
+      .map(([x, y, rx, ry, label], index) => {
+        const drift = [[0,0],[18,-12],[-16,15],[12,10]][(predictionVersion + index) % 4];
+        return { x: x + drift[0], y: y + drift[1], rx, ry, label };
+      })
+      .filter(zone => zone.rx && zone.ry);
+  }
   function renderZones(reason = '계절 관측 자료') {
     const season = seasons[seasonIndex];
     zoneLayer.replaceChildren();
-    season.zones.forEach(([x, y, rx, ry, label], index) => {
-      if (!rx) return;
-      const drift = [[0,0],[6,-4],[-5,5],[4,3]][(predictionVersion + index) % 4];
-      x += drift[0]; y += drift[1];
+    visibleZones().forEach(({x, y, rx, ry, label}, index) => {
       const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
       ellipse.setAttribute('class', 'paper-zone'); ellipse.setAttribute('cx', x); ellipse.setAttribute('cy', y); ellipse.setAttribute('rx', rx); ellipse.setAttribute('ry', ry);
       ellipse.setAttribute('fill', index === 0 ? '#ff6e5238' : '#ffc14d28'); ellipse.setAttribute('stroke', index === 0 ? '#ff8b70' : '#ffc14d');
@@ -102,6 +108,32 @@
     });
     const title = $('#mapTitle');
     if (title) title.innerHTML = `다대포 → 가덕도 대항<small>${season.name} · ${reason} · 조사 정점 기반 관심구역</small>`;
+  }
+
+  function buildMarinePath(id, start, end) {
+    if (start.x === end.x && start.y === end.y) return `M${start.x} ${start.y}`;
+
+    // The lower half of this cropped chart is continuous open water.  Every
+    // generated route first joins that surveyed corridor, so no straight
+    // segment can cut across the large islands or the central islets.
+    const zones = visibleZones();
+    const zoneBottom = Math.max(515, ...zones.map(zone => zone.y + zone.ry));
+    const routeOffset = id === 'outer' ? 92 : id === 'north' ? 52 : 68;
+    const safeY = Math.min(720, zoneBottom + routeOffset);
+    const leftGate = { x: 150, y: Math.min(680, safeY - 10) };
+    const rightGate = { x: 585, y: Math.min(650, safeY - 35) };
+
+    // The slow route deliberately uses the existing shipping corridor.  It may
+    // cross a warning ellipse, but it still stays below the mapped islets.
+    if (id === 'slow') {
+      const midY = Math.max(455, Math.min(535, zones[0]?.y + 75 || 485));
+      return `M${start.x} ${start.y} C${start.x - 28} ${Math.max(start.y + 65, 300)} 570 410 505 ${midY} S335 ${midY + 12} 250 ${midY} S${end.x + 55} ${end.y + 25} ${end.x} ${end.y}`;
+    }
+
+    const points = start.x > end.x
+      ? [start, rightGate, {x:470,y:safeY}, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, leftGate, end]
+      : [start, leftGate, {x:310,y:safeY + (id === 'outer' ? 18 : 0)}, {x:470,y:safeY}, rightGate, end];
+    return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${Math.min(735, point.y)}`).join(' ');
   }
 
   function currentVessel() { return vessels[vesselIndex]; }
@@ -138,10 +170,7 @@
     const startId = $('#v2Start')?.value || 'dadaepo';
     const endId = $('#v2End')?.value || 'gadeok';
     const start = ports[startId], end = ports[endId];
-    const bend = id === 'outer' ? 110 : id === 'north' ? -75 : id === 'eco' ? 65 : 12;
-    const generatedPath = startId === endId
-      ? `M${start.x} ${start.y}`
-      : `M${start.x} ${start.y} C${start.x - 35} ${start.y + bend} ${end.x + 55} ${end.y + bend} ${end.x} ${end.y}`;
+    const generatedPath = buildMarinePath(id, start, end);
     $('#activePath')?.setAttribute('d', generatedPath);
     $('#basePath')?.setAttribute('d', generatedPath);
     if (id === 'slow') positionSlowBoat();
@@ -185,7 +214,14 @@
     const routeButton = event.target.closest('[data-enhanced-route]');
     if (routeButton) { event.preventDefault(); event.stopImmediatePropagation(); setRoute(routeButton.dataset.enhancedRoute); return; }
     if (event.target.closest('[data-modal="report"]')) { event.preventDefault(); event.stopImmediatePropagation(); openReport(); return; }
-    if (event.target.id === 'refreshSightings') { event.preventDefault(); event.stopImmediatePropagation(); predictionVersion += 1; renderZones('최근 제보·관측시각·계절 반영'); window.toast?.('계절 조사 정점을 유지하고 최신 제보 반영 위치를 갱신했습니다.'); return; }
+    if (event.target.id === 'refreshSightings') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      predictionVersion += 1;
+      renderZones('최근 제보·관측시각·계절 반영');
+      setRoute(routeId);
+      window.toast?.('출현 가능 영역과 현재 항로를 함께 다시 계산했습니다.');
+      return;
+    }
     if (event.target.id === 'saveVesselChoice') {
       const selected = $('#vesselChoices .active');
       vesselIndex = Number(selected?.dataset.vessel ?? 2);
@@ -212,6 +248,7 @@
     event.stopImmediatePropagation();
     seasonIndex = Number(seasonSelect.value); predictionVersion = 0;
     renderZones('계절 생태 레이어 자동 반영');
+    setRoute(routeId);
   }, true);
 
   const sources = $('.sources');
