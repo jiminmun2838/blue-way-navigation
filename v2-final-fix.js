@@ -28,6 +28,7 @@
     dadaepo: { x: 645, y: 190, name: '다대포항' },
     noksado: { x: 425, y: 305, name: '눌차도 북항' },
     gadeok: { x: 83, y: 500, name: '가덕도 천성항' },
+    daehang: { x: 35, y: 610, name: '가덕도 대항' },
     jinudo: { x: 300, y: 260, name: '진우도 관찰지점' }
   };
 
@@ -36,7 +37,7 @@
     .map-panel{display:flex!important;flex-direction:column!important;min-height:0!important;height:auto!important;overflow:visible!important;padding:0 0 42px!important}
     .map{height:500px!important;min-height:0!important;width:100%!important;transform:none!important;flex:none!important;touch-action:auto!important;cursor:default!important}
     .map-footer,.habitat-note,.voice{display:none!important}
-    .nav-card{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;flex:none!important;width:calc(100% - 36px)!important;margin:38px auto 0!important;z-index:20!important}
+    .nav-card{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;flex:none!important;width:calc(100% - 36px)!important;margin:56px auto 0!important;z-index:20!important}
     .nav-controls{gap:8px!important}.nav-controls button{min-height:42px!important}
     .endpoint-final{position:absolute;z-index:12;padding:6px 10px;border-radius:8px;background:#062433eb;border:1px solid #75d9d0;color:#fff;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
     .endpoint-final.end{border-color:#9bea75;background:#163c31ed}
@@ -49,6 +50,7 @@
     .port-point.selected circle{fill:#2196f3;stroke:#fff;stroke-width:3}.port-point.both circle{fill:#7867ff}
     #rightVesselSummary{margin:0 0 12px;padding:10px;border:1px solid #2d6371;border-radius:10px;background:#082b39;color:#c4dddd;font-size:11px;line-height:1.45}
     #sendSighting{background:#9bea75!important;color:#063221!important;border:0!important;font-weight:900!important}
+    #beginVoyage{background:#9bea75!important;color:#052f25!important;border:2px solid #c9ffae!important;font-weight:950!important;box-shadow:0 0 0 3px #9bea7538,0 10px 24px #00182066!important}
     .logo{cursor:pointer!important}.logo:hover{color:#9bea75!important}
     .map-panel:fullscreen{padding:14px!important;background:#061c29!important}.map-panel:fullscreen .map{height:calc(100vh - 190px)!important}.map-panel:fullscreen .nav-card{margin-top:12px!important;width:min(680px,94%)!important}
   `;
@@ -159,9 +161,22 @@
 
   function buildMarinePath(id, start, end, startId, endId) {
     if (start.x === end.x && start.y === end.y) return `M${start.x} ${start.y}`;
-    const key = [startId, endId].sort().join('-');
+    if ([startId, endId].includes('daehang') && [startId, endId].includes('gadeok')) {
+      const direct = [[83,500],[180,535],[140,620],[80,665],[35,610]];
+      const points = startId === 'gadeok' ? direct : direct.slice().reverse();
+      return points.map((point, index) => `${index ? 'L' : 'M'}${point[0]} ${point[1]}`).join(' ');
+    }
+    const normalizedStart = startId === 'daehang' ? 'gadeok' : startId;
+    const normalizedEnd = endId === 'daehang' ? 'gadeok' : endId;
+    const key = [normalizedStart, normalizedEnd].sort().join('-');
     const routeTable = id === 'slow' ? slowPairRoutes : pairRoutes;
-    let points = (routeTable[key] || [[start.x,start.y],[end.x,end.y]]).map(([x,y]) => ({x,y}));
+    let rawPoints = (routeTable[key] || [[start.x,start.y],[end.x,end.y]]).map(([x,y]) => [x,y]);
+    if (startId === 'daehang' || endId === 'daehang') {
+      const extension = [[83,500],[180,535],[140,620],[80,665],[35,610]];
+      if (rawPoints[0][0] === 83 && rawPoints[0][1] === 500) rawPoints = [...extension.slice().reverse(), ...rawPoints.slice(1)];
+      else if (rawPoints.at(-1)[0] === 83 && rawPoints.at(-1)[1] === 500) rawPoints = [...rawPoints.slice(0,-1), ...extension];
+    }
+    let points = rawPoints.map(([x,y]) => ({x,y}));
     const first = points[0];
     if (first.x !== start.x || first.y !== start.y) points.reverse();
 
@@ -176,7 +191,45 @@
         ? {...point, y:point.y + 16}
         : point);
     }
+    if (id === 'eco') points = avoidActiveZones(points);
     return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${Math.min(735, point.y)}`).join(' ');
+  }
+
+  function segmentHitsZone(a, b, zone, margin = 1.08) {
+    for (let index = 0; index <= 48; index += 1) {
+      const t = index / 48;
+      const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      const metric = ((x-zone.x)**2 / (zone.rx*margin)**2) + ((y-zone.y)**2 / (zone.ry*margin)**2);
+      if (metric <= 1) return true;
+    }
+    return false;
+  }
+  function avoidActiveZones(initialPoints) {
+    let points = initialPoints.slice();
+    for (let pass = 0; pass < 3; pass += 1) {
+      visibleZones().forEach(zone => {
+        const revised = [points[0]];
+        for (let index = 0; index < points.length - 1; index += 1) {
+          const a = revised.at(-1), b = points[index + 1];
+          if (segmentHitsZone(a, b, zone)) {
+            const candidates = [
+              {x:zone.x+zone.rx+30,y:zone.y-zone.ry-24},
+              {x:zone.x+zone.rx+30,y:zone.y+zone.ry+24},
+              {x:zone.x,y:zone.y+zone.ry+32},
+              {x:zone.x-zone.rx-24,y:zone.y+zone.ry+28}
+            ].filter(point => !segmentHitsZone(a, point, zone, 1.04) && !segmentHitsZone(point, b, zone, 1.04));
+            const best = candidates.sort((left,right) => {
+              const score = point => Math.hypot(point.x-a.x,point.y-a.y)+Math.hypot(b.x-point.x,b.y-point.y)+(point.x<zone.x?55:0);
+              return score(left)-score(right);
+            })[0];
+            if (best) revised.push(best);
+          }
+          revised.push(b);
+        }
+        points = revised;
+      });
+    }
+    return points;
   }
 
   function currentVessel() { return vessels[vesselIndex]; }
@@ -270,15 +323,42 @@
       vesselIndex = Number(selected?.dataset.vessel ?? 2);
       setTimeout(() => { currentSpeed = currentVessel().speed; updateRightVesselUI(); updateSpeed(); }, 0);
     }
-    if (event.target.id === 'slowerBtn' || event.target.id === 'slowMode') setRoute('slow');
+    if (event.target.id === 'slowerBtn' || event.target.id === 'slowMode') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setRoute('slow');
+      return;
+    }
   }, true);
 
+  function syncEndpointOptions(changed) {
+    const startSelect = $('#v2Start'), endSelect = $('#v2End');
+    if (!startSelect || !endSelect) return;
+    if (startSelect.value === endSelect.value) {
+      const target = changed === 'end' ? startSelect : endSelect;
+      const blocked = changed === 'end' ? endSelect.value : startSelect.value;
+      const replacement = [...target.options].find(option => option.value !== blocked);
+      if (replacement) target.value = replacement.value;
+    }
+    [...endSelect.options].forEach(option => {
+      const unavailable = option.value === startSelect.value;
+      option.disabled = unavailable;
+      option.hidden = unavailable;
+    });
+    [...startSelect.options].forEach(option => {
+      const unavailable = option.value === endSelect.value;
+      option.disabled = unavailable;
+      option.hidden = unavailable;
+    });
+  }
   $('#v2Start')?.addEventListener('change', (event) => {
     event.stopImmediatePropagation();
+    syncEndpointOptions('start');
     setRoute(routeId);
   }, true);
   $('#v2End')?.addEventListener('change', (event) => {
     event.stopImmediatePropagation();
+    syncEndpointOptions('end');
     setRoute(routeId);
   }, true);
   let seasonSelect = $('#seasonPicker');
@@ -366,7 +446,12 @@
   // presentation, the launch button starts the simulation without reopening it.
   setTimeout(() => {
     $('#refreshSightings')?.remove();
-    $('#safeMode')?.remove();
+    const safeMode = $('#safeMode');
+    const operationTitle = safeMode?.closest('.section-title');
+    safeMode?.remove();
+    operationTitle?.remove();
+    $('.ops')?.remove();
+    $('#safetyRule')?.remove();
     const start = $('#startBtn');
     const firstStatusScreen = start?.onclick;
     if (start && typeof firstStatusScreen === 'function') {
@@ -375,5 +460,6 @@
     }
   }, 180);
 
+  syncEndpointOptions('start');
   renderZones(); renderPorts(); setRoute('eco'); updateRightVesselUI();
 })();
