@@ -29,7 +29,7 @@
     noksado: { x: 425, y: 305, name: '눌차도 북항' },
     gadeok: { x: 83, y: 500, name: '가덕도 천성항' },
     daehang: { x: 35, y: 610, name: '가덕도 대항' },
-    jinudo: { x: 300, y: 260, name: '진우도 관찰지점' }
+    jinudo: { x: 400, y: 245, name: '진우도 관찰지점' }
   };
 
   const css = document.createElement('style');
@@ -123,7 +123,7 @@
       [645,190],[648,245],[640,310],[610,370],[550,420],[490,400],[450,360],[425,305]
     ],
     'dadaepo-jinudo': [
-      [645,190],[648,245],[640,310],[610,370],[550,420],[480,400],[410,360],[350,330],[300,260]
+      [645,190],[648,245],[640,310],[610,370],[550,420],[480,400],[430,340],[400,245]
     ],
     'gadeok-noksado': [
       [83,500],[120,515],[180,535],[220,500],[280,510],
@@ -131,10 +131,10 @@
     ],
     'gadeok-jinudo': [
       [83,500],[120,515],[180,535],[200,510],[260,520],
-      [320,480],[350,420],[340,340],[300,260]
+      [320,480],[350,420],[380,330],[400,245]
     ],
     'jinudo-noksado': [
-      [300,260],[330,340],[380,380],[425,360],[425,305]
+      [400,245],[390,285],[405,330],[425,305]
     ]
   };
   const slowPairRoutes = {
@@ -146,16 +146,16 @@
       [645,190],[648,245],[640,310],[610,370],[540,400],[470,365],[425,305]
     ],
     'dadaepo-jinudo': [
-      [645,190],[648,245],[640,310],[610,370],[540,400],[455,360],[375,310],[300,260]
+      [645,190],[648,245],[640,310],[610,370],[540,400],[470,350],[400,245]
     ],
     'gadeok-noksado': [
       [83,500],[150,500],[240,470],[330,440],[400,390],[425,305]
     ],
     'gadeok-jinudo': [
-      [83,500],[150,500],[220,480],[300,430],[330,350],[300,260]
+      [83,500],[150,500],[220,480],[300,430],[360,340],[400,245]
     ],
     'jinudo-noksado': [
-      [300,260],[350,300],[425,305]
+      [400,245],[410,280],[425,305]
     ]
   };
 
@@ -208,39 +208,30 @@
     return false;
   }
   function avoidActiveZones(initialPoints) {
-    let points = initialPoints.slice();
-    for (let pass = 0; pass < 8; pass += 1) {
-      visibleZones().forEach(zone => {
-        const revised = [points[0]];
-        for (let index = 0; index < points.length - 1; index += 1) {
-          const a = revised.at(-1), b = points[index + 1];
-          if (segmentHitsZone(a, b, zone)) {
-            const margin = 34;
-            const candidates = [
-              [{x:zone.x-zone.rx-margin,y:zone.y-zone.ry-margin},{x:zone.x+zone.rx+margin,y:zone.y-zone.ry-margin}],
-              [{x:zone.x-zone.rx-margin,y:zone.y+zone.ry+margin},{x:zone.x+zone.rx+margin,y:zone.y+zone.ry+margin}],
-              [{x:zone.x-zone.rx-margin,y:zone.y-zone.ry-margin},{x:zone.x-zone.rx-margin,y:zone.y+zone.ry+margin}],
-              [{x:zone.x+zone.rx+margin,y:zone.y-zone.ry-margin},{x:zone.x+zone.rx+margin,y:zone.y+zone.ry+margin}]
-            ].map(pair => {
-              const ordered = Math.hypot(a.x-pair[0].x,a.y-pair[0].y) <= Math.hypot(a.x-pair[1].x,a.y-pair[1].y) ? pair : pair.slice().reverse();
-              return ordered;
-            }).filter(pair =>
-              !segmentHitsZone(a, pair[0], zone, 1.08) &&
-              !segmentHitsZone(pair[0], pair[1], zone, 1.08) &&
-              !segmentHitsZone(pair[1], b, zone, 1.08)
-            );
-            const best = candidates.sort((left,right) => {
-              const score = pair => Math.hypot(pair[0].x-a.x,pair[0].y-a.y)+Math.hypot(pair[1].x-pair[0].x,pair[1].y-pair[0].y)+Math.hypot(b.x-pair[1].x,b.y-pair[1].y);
-              return score(left)-score(right);
-            })[0];
-            if (best) revised.push(...best);
-          }
-          revised.push(b);
-        }
-        points = revised;
-      });
-    }
-    return points;
+    const zones = visibleZones();
+    const routeHits = points => points.slice(0,-1).some((point,index) =>
+      zones.some(zone => segmentHitsZone(point, points[index + 1], zone, 1.06))
+    );
+    if (!routeHits(initialPoints)) return initialPoints;
+    const start = initialPoints[0], end = initialPoints.at(-1);
+    const margin = 48;
+    const left = Math.min(...zones.map(z => z.x-z.rx))-margin;
+    const right = Math.max(...zones.map(z => z.x+z.rx))+margin;
+    const top = Math.min(...zones.map(z => z.y-z.ry))-margin;
+    const bottom = Math.max(...zones.map(z => z.y+z.ry))+margin;
+    const sides = [
+      {penalty:220, pair:[{x:left,y:top},{x:right,y:top}]},
+      {penalty:0, pair:[{x:left,y:bottom},{x:right,y:bottom}]},
+      {penalty:120, pair:[{x:left,y:top},{x:left,y:bottom}]},
+      {penalty:25, pair:[{x:right,y:top},{x:right,y:bottom}]}
+    ];
+    const candidates = sides.map(({penalty,pair}) => {
+      const ordered = Math.hypot(start.x-pair[0].x,start.y-pair[0].y) <= Math.hypot(start.x-pair[1].x,start.y-pair[1].y) ? pair : pair.slice().reverse();
+      const points = [start, ...ordered, end];
+      const length = points.slice(0,-1).reduce((sum,point,index) => sum + Math.hypot(points[index+1].x-point.x,points[index+1].y-point.y),0);
+      return {points,length:length+penalty};
+    }).filter(candidate => !routeHits(candidate.points));
+    return candidates.sort((a,b) => a.length-b.length)[0]?.points || initialPoints;
   }
 
   function currentVessel() { return vessels[vesselIndex]; }
