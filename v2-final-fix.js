@@ -40,7 +40,9 @@
     .nav-controls{gap:8px!important}.nav-controls button{min-height:42px!important}
     .endpoint-final{position:absolute;z-index:12;padding:6px 10px;border-radius:8px;background:#062433eb;border:1px solid #75d9d0;color:#fff;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
     .endpoint-final.end{border-color:#9bea75;background:#163c31ed}
-    .paper-zone{stroke-width:2;stroke-dasharray:5 4;pointer-events:none}.paper-zone-label{font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3;pointer-events:none}
+    #map.v2-real svg #paperZones{display:block!important;visibility:visible!important}
+    #map.v2-real svg #paperZones .paper-zone{display:block!important;visibility:visible!important;fill:#ff8a3d52!important;stroke:#ff7a24!important;stroke-width:3!important;stroke-dasharray:7 5;filter:drop-shadow(0 0 5px #ff8a3d88);pointer-events:none}
+    #map.v2-real svg #paperZones .paper-zone-label{display:block!important;visibility:visible!important;fill:#fff4df!important;font-size:11px;font-weight:900;paint-order:stroke;stroke:#6b300d;stroke-width:4;pointer-events:none}
     #map.v2-real svg>.hazard,#map.v2-real>.hazard-label{display:none!important}
     #map.v2-real svg #fixedPorts,#map.v2-real svg #fixedPorts .port-point{display:block!important}
     .port-point circle{display:block!important;fill:#e84e4e;stroke:#fff;stroke-width:2}.port-point text{display:block!important;fill:#fff;font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3}
@@ -125,16 +127,19 @@
     const portExit = port => {
       if (port.x > 600) return {x:560,y:370}; // 다대포 남서측 항만 입구
       if (port.x < 120) return {x:150,y:535}; // 가덕도 동측 개방 수역
-      if (port.x > 380) return {x:430,y:390}; // 눌차도 남측 수로
-      return {x:315,y:390};                   // 진우도 남측 수로
+      if (port.x > 380) return {x:380,y:400}; // 눌차도 남서측 수로
+      return {x:260,y:400};                   // 진우도 남서측 수로
     };
     const startExit = portExit(start), endExit = portExit(end);
 
     // The slow route deliberately uses the existing shipping corridor.  It may
     // cross a warning ellipse, but it still stays below the mapped islets.
     if (id === 'slow') {
-      const midY = Math.max(455, Math.min(535, zones[0]?.y + 75 || 485));
-      return `M${start.x} ${start.y} C${start.x - 28} ${Math.max(start.y + 65, 300)} 570 410 505 ${midY} S335 ${midY + 12} 250 ${midY} S${end.x + 55} ${end.y + 25} ${end.x} ${end.y}`;
+      // Cross only the southernmost active ecology zone, which lies in open
+      // water, then return to the same charted sea corridor.
+      const target = zones.reduce((best, zone) => !best || zone.y > best.y ? zone : best, null) || {x:300,y:560};
+      const points = [start, startExit, {x:470,y:500}, {x:target.x,y:target.y}, endExit, end];
+      return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${point.y}`).join(' ');
     }
 
     const points = start.x > end.x
