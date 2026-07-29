@@ -21,6 +21,8 @@
   let vesselIndex = 2;
   let currentSpeed = vessels[vesselIndex].speed;
   let slowSpeed = 10;
+  let slowRunning = false;
+  let slowProgress = 0;
 
   const ports = {
     dadaepo: { x: 645, y: 190, name: '다대포항' },
@@ -130,6 +132,8 @@
   function setRoute(id) {
     if (!routes[id]) return;
     routeId = id;
+    slowRunning = false;
+    slowProgress = 0;
     const route = routes[id];
     const startId = $('#v2Start')?.value || 'dadaepo';
     const endId = $('#v2End')?.value || 'gadeok';
@@ -140,6 +144,7 @@
       : `M${start.x} ${start.y} C${start.x - 35} ${start.y + bend} ${end.x + 55} ${end.y + bend} ${end.x} ${end.y}`;
     $('#activePath')?.setAttribute('d', generatedPath);
     $('#basePath')?.setAttribute('d', generatedPath);
+    if (id === 'slow') positionSlowBoat();
     setTag(startTag, start.x, start.y, `출발 · ${start.name}`);
     setTag(endTag, end.x, end.y, `목적 · ${end.name}`);
     renderPorts();
@@ -162,6 +167,19 @@
 
   $('.logo')?.addEventListener('click', () => window.location.reload());
   document.addEventListener('click', (event) => {
+    if (event.target.id === 'playBtn' && routeId === 'slow') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (slowProgress >= 1) slowProgress = 0;
+      slowRunning = !slowRunning;
+      event.target.textContent = slowRunning ? 'Ⅱ 일시정지' : '▶ 항해 재생';
+      return;
+    }
+    if (event.target.id === 'skipBtn' && routeId === 'slow') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      slowProgress = Math.min(1, slowProgress + .2);
+      positionSlowBoat();
+      return;
+    }
     const routeButton = event.target.closest('[data-enhanced-route]');
     if (routeButton) { event.preventDefault(); event.stopImmediatePropagation(); setRoute(routeButton.dataset.enhancedRoute); return; }
     if (event.target.closest('[data-modal="report"]')) { event.preventDefault(); event.stopImmediatePropagation(); openReport(); return; }
@@ -216,6 +234,28 @@
     const match = transform.match(/translate\(\s*([\d.-]+)[,\s]+([\d.-]+)/);
     return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
   }
+  function positionSlowBoat() {
+    const path = $('#activePath');
+    const icon = $('#boatIcon');
+    if (!path || !icon || typeof path.getTotalLength !== 'function') return;
+    const length = path.getTotalLength();
+    if (!length) return;
+    const point = path.getPointAtLength(length * slowProgress);
+    const ahead = path.getPointAtLength(Math.min(length, length * slowProgress + 2));
+    const angle = Math.atan2(ahead.y - point.y, ahead.x - point.x) * 180 / Math.PI + 90;
+    icon.setAttribute('transform', `translate(${point.x},${point.y}) rotate(${angle})`);
+    $('#boatLabel')?.setAttribute('transform', `translate(${point.x - 645},${point.y - 190})`);
+  }
+  setInterval(() => {
+    if (routeId !== 'slow' || !slowRunning) return;
+    slowProgress = Math.min(1, slowProgress + .0022);
+    positionSlowBoat();
+    if (slowProgress >= 1) {
+      slowRunning = false;
+      const play = $('#playBtn');
+      if (play) play.textContent = '↺ 다시 보기';
+    }
+  }, 40);
   function boatInsideWarningZone(point) {
     if (!point) return false;
     return [...document.querySelectorAll('#paperZones ellipse, #map .hazard')].some(zone => {
@@ -227,7 +267,7 @@
   }
   setInterval(() => {
     if (routeId !== 'slow') return;
-    const playing = $('#playBtn')?.textContent.includes('일시정지');
+    const playing = slowRunning;
     const inside = playing && boatInsideWarningZone(boatCoordinates());
     const target = inside ? 8 : 10;
     slowSpeed += (target - slowSpeed) * 0.14;
