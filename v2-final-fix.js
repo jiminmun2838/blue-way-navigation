@@ -114,14 +114,14 @@
 
   const pairRoutes = {
     'dadaepo-gadeok': [
-      [645,190],[610,260],[560,360],[515,440],[430,500],
+      [645,190],[610,210],[565,225],[520,260],[500,340],[515,440],[430,500],
       [330,520],[250,500],[180,535],[120,515],[83,500]
     ],
     'dadaepo-noksado': [
-      [645,190],[610,250],[560,330],[500,370],[450,360],[425,305]
+      [645,190],[610,210],[565,225],[520,260],[470,300],[425,305]
     ],
     'dadaepo-jinudo': [
-      [645,190],[610,250],[560,330],[490,380],[400,380],[340,340],[300,260]
+      [645,190],[610,210],[565,225],[520,260],[470,315],[410,355],[350,335],[300,260]
     ],
     'gadeok-noksado': [
       [83,500],[120,515],[180,535],[220,500],[280,510],
@@ -145,7 +145,11 @@
 
     // Route alternatives stay inside the same verified channel.  Only the
     // open-water middle section is adjusted, avoiding new land intersections.
-    if (id === 'outer') {
+    if (id === 'eco') {
+      points = points.map((point, index) => index > 2 && index < points.length - 3
+        ? {...point, x:Math.min(690, point.x + 32), y:Math.min(690, point.y + 18)}
+        : point);
+    } else if (id === 'outer') {
       points = points.map((point, index) => index && index < points.length - 1
         ? {...point, y:Math.min(690, point.y + 42)}
         : point);
@@ -169,7 +173,7 @@
       const cardRoute = routeButton?.dataset.enhancedRoute || 'eco';
       const distance = parseFloat(card.querySelector('.metrics div:first-child b')?.textContent || '0');
       const eta = card.querySelector('.metrics div:nth-child(2) b');
-      const routeFactor = { eco: .92, slow: .72, outer: .96, north: .82, safety: 0 }[cardRoute] ?? .9;
+      const routeFactor = { eco: .86, slow: .96, outer: .92, north: .88, safety: 0 }[cardRoute] ?? .9;
       const effectiveSpeed = vessel.speed * routeFactor;
       if (eta && distance && effectiveSpeed) eta.textContent = `${Math.round(distance / effectiveSpeed * 60)}분`;
       if (eta && cardRoute === 'safety') eta.textContent = '재평가';
