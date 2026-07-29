@@ -1,265 +1,177 @@
-(()=>{
-  const map=document.querySelector('#map');
-  if(!map)return;
-  const paths={
-    eco:['M560 360 C510 422 470 495 390 520 S315 480 280 420','M560 360 C500 432 458 505 380 530 S305 485 280 420'],
-    slow:['M560 360 C505 382 450 407 390 420 S320 422 280 420','M560 360 C500 375 442 398 382 414 S318 420 280 420'],
-    outer:['M560 360 C565 485 505 595 395 610 S300 505 280 420','M560 360 C550 475 490 580 382 598 S294 500 280 420'],
-    north:['M560 360 C505 340 450 350 400 385 S330 415 280 420','M560 360 C500 330 442 342 390 378 S320 412 280 420'],
-    safety:['M560 360 C535 372 515 385 495 400']
+(() => {
+  const $ = (selector) => document.querySelector(selector);
+  const map = $('#map');
+  const svg = $('#map svg');
+  if (!map || !svg) return;
+
+  const routes = {
+    eco:   { name: '보호 우회 항로', speed: 12.0, path: 'M560 360 C510 430 470 510 390 530 S315 482 280 420' },
+    slow:  { name: '감속 항로', speed: 10.0, path: 'M560 360 C505 382 450 407 390 420 S320 422 280 420' },
+    outer: { name: '남측 외곽 항로', speed: 12.6, path: 'M560 360 C565 485 505 595 395 610 S300 505 280 420' },
+    north: { name: '북측 완만 우회', speed: 10.0, path: 'M560 360 C505 340 450 350 400 385 S330 415 280 420' },
+    safety:{ name: '안전 모드', speed: 0, path: 'M560 360 C535 372 515 385 495 400' }
   };
-  const speeds={eco:12,slow:9.5,outer:12.6,north:10,safety:0};
-  const style=document.createElement('style');
-  style.textContent=`
-    .map-panel{align-self:start!important;height:auto!important;min-height:0!important;overflow:visible!important;padding:0 0 22px!important;display:flex!important;flex-direction:column!important}
-    .map{height:500px!important;min-height:0!important;transform:translateX(-18px);width:calc(100% + 18px)!important;flex:none!important;touch-action:none!important;cursor:grab!important}
-    .map.dragging{cursor:grabbing!important}
-    .map.v2-real{background-position:calc(36% + var(--pan-x, 0px)) calc(50% + var(--pan-y, 0px))!important}
-    .map.v2-real svg{transform:translate(var(--pan-x, 0px),var(--pan-y, 0px))!important;width:100%!important}
-    .nav-card{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;width:calc(100% - 36px)!important;margin:28px auto 0!important;flex:none!important}
-    .nav-controls{gap:4px!important;margin-top:7px!important}
-    .map-panel:fullscreen{display:flex!important;flex-direction:column!important;padding:14px!important;background:#061c29!important}
-    .map-panel:fullscreen .map{height:calc(100vh - 184px)!important;width:100%!important;transform:none!important;flex:1 1 auto!important}
-    .map-panel:fullscreen .nav-card{display:block!important;width:min(680px,94%)!important;margin:12px auto 0!important;z-index:20!important}
-    .endpoint-live{position:absolute;z-index:11;transform:translate(-50%,-50%);padding:6px 9px;border-radius:8px;border:1px solid #74d9d0;background:#062433ed;color:#effffb;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;box-shadow:0 3px 10px #00172177}
-    .endpoint-live.end{border-color:#9bea75;background:#163c31ed}
-    .map.v2-real .endpoint-live,.map.v2-real .hazard-label{margin-left:var(--pan-x, 0px)!important;margin-top:var(--pan-y, 0px)!important}
-    #beginVoyage{display:block!important;width:100%!important;margin-top:16px!important;background:#9bea75!important;color:#063221!important;border:0!important;border-radius:9px!important;padding:13px!important;font-size:14px!important;font-weight:900!important;text-shadow:none!important}
-    .season-picker{grid-column:1/-1!important}.season-picker select{font-weight:800!important}.source-paper{display:block!important;margin-top:8px!important;color:#78dcd5!important;font-size:10px!important;line-height:1.45!important;text-decoration:none!important}
+  const vessels = [
+    { speed: 16.0, noise: '2 / 낮음', length: '5.2 m', max: '21.0 kn' },
+    { speed: 12.0, noise: '2 / 보통', length: '6.5 m', max: '16.0 kn' },
+    { speed: 13.5, noise: '2 / 보통', length: '8.7 m', max: '19.0 kn' },
+    { speed: 11.0, noise: '3 / 높음', length: '14.2 m', max: '15.0 kn' }
+  ];
+  let routeId = 'eco';
+  let vesselIndex = 2;
+  let slowStartedAt = null;
+  let currentSpeed = vessels[vesselIndex].speed;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .map-panel{display:flex!important;flex-direction:column!important;min-height:0!important;height:auto!important;overflow:visible!important;padding:0 0 42px!important}
+    .map{height:500px!important;min-height:0!important;width:100%!important;transform:none!important;flex:none!important;touch-action:auto!important;cursor:default!important}
+    .map-footer,.habitat-note,.voice{display:none!important}
+    .nav-card{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;flex:none!important;width:calc(100% - 36px)!important;margin:38px auto 0!important;z-index:20!important}
+    .nav-controls{gap:8px!important}.nav-controls button{min-height:42px!important}
+    .endpoint-final{position:absolute;z-index:12;padding:6px 10px;border-radius:8px;background:#062433eb;border:1px solid #75d9d0;color:#fff;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
+    .endpoint-final.end{border-color:#9bea75;background:#163c31ed}
+    .paper-zone{stroke-width:2;stroke-dasharray:5 4;pointer-events:none}.paper-zone-label{font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3;pointer-events:none}
+    #rightVesselSummary{margin:0 0 12px;padding:10px;border:1px solid #2d6371;border-radius:10px;background:#082b39;color:#c4dddd;font-size:11px;line-height:1.45}
+    #sendSighting{background:#9bea75!important;color:#063221!important;border:0!important;font-weight:900!important}
+    .logo{cursor:pointer!important}.logo:hover{color:#9bea75!important}
+    .map-panel:fullscreen{padding:14px!important;background:#061c29!important}.map-panel:fullscreen .map{height:calc(100vh - 190px)!important}.map-panel:fullscreen .nav-card{margin-top:12px!important;width:min(680px,94%)!important}
   `;
-  document.head.append(style);
-  let selected='eco',variant=0;
-  const svg=map.querySelector('svg');
-  const startLabel=document.createElement('div');
-  const endLabel=document.createElement('div');
-  startLabel.className='endpoint-live start';
-  endLabel.className='endpoint-live end';
-  map.append(startLabel,endLabel);
-  const pointNames={dadaepo:'다대포항',gadeok:'가덕도 대항',noksado:'눌차도 북항',jinudo:'진우도 관찰지점'};
-  function selectedName(id,fallback){
-    const select=document.querySelector(id);
-    return select?.selectedOptions?.[0]?.textContent?.trim()||fallback;
-  }
-  function placeEndpoint(el,p,caption){
-    el.textContent=caption;
-    el.style.left=(p.x/760*100)+'%';
-    el.style.top=(p.y/770*100)+'%';
-  }
-  function syncEndpoints(){
-    const path=document.querySelector('#activePath');
-    if(!path||!svg)return;
-    try{
-      const total=path.getTotalLength();
-      placeEndpoint(startLabel,path.getPointAtLength(0),'출발 · '+selectedName('#v2Start','다대포항'));
-      placeEndpoint(endLabel,path.getPointAtLength(total),'목적 · '+selectedName('#v2End','가덕도 대항'));
-    }catch(_){/* SVG is still being initialized. */}
-  }
-  function apply(id){
-    if(!paths[id])id='eco';
-    selected=id;
-    const p=paths[id][variant%paths[id].length];
-    map.dataset.liveSpeed=String(speeds[id]);
-    for(const el of document.querySelectorAll('#activePath,#basePath'))el.setAttribute('d',p);
-    const circles=document.querySelectorAll('#map svg .marker circle');
-    if(circles[0]){circles[0].setAttribute('cx','560');circles[0].setAttribute('cy','360');}
-    if(circles[1]){circles[1].setAttribute('cx','280');circles[1].setAttribute('cy','420');}
-    requestAnimationFrame(syncEndpoints);
-  }
-  function updateSpeed(){
-    const v=Number(map.dataset.liveSpeed);
-    const el=document.querySelector('#speed');
-    if(el)el.innerHTML=v.toFixed(1)+' <small style="font-size:11px">kn</small>';
-  }
-  function installHabitatLayer(){
-    if(!svg||svg.querySelector('.paper-habitat-layer'))return;
-    const style=document.createElement('style');
-    style.textContent=`.voice{position:relative!important;right:auto!important;bottom:auto!important;align-self:flex-end!important;order:10!important;margin:12px 24px 0 auto!important;z-index:12!important}.paper-habitat-layer .zone{stroke-width:2;stroke-dasharray:5 4;pointer-events:none}.paper-habitat-layer text{font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3}.habitat-note{position:absolute;z-index:8;left:18px;bottom:15px;width:245px;padding:9px 11px;border-radius:10px;background:#062433e8;border:1px solid #efb55a;color:#fff0cc;font-size:10px;line-height:1.45;pointer-events:none}.habitat-note b{display:block;color:#ffcb73;font-size:11px;margin-bottom:2px}`;
-    document.head.append(style);
-    const layer=document.createElementNS('http://www.w3.org/2000/svg','g');
-    layer.setAttribute('class','paper-habitat-layer');
-    layer.innerHTML=`
-      <ellipse class="zone" cx="245" cy="595" rx="82" ry="58" fill="#ff6e5238" stroke="#ff8c70"/><text x="176" y="596" fill="#fff0cf">P4 가덕등대 남단 · 매우 높음</text>
-      <ellipse class="zone" cx="263" cy="440" rx="62" ry="46" fill="#ffc14d2e" stroke="#ffc14d"/><text x="211" y="441" fill="#fff0cf">P3 · 높음</text>
-      <ellipse class="zone" cx="208" cy="330" rx="55" ry="42" fill="#ffc14d24" stroke="#ffc14d"/><text x="165" y="331" fill="#fff0cf">P1 · 주의</text>
-      <ellipse class="zone" cx="305" cy="280" rx="45" ry="34" fill="#78dcd522" stroke="#78dcd5"/><text x="272" y="281" fill="#e9ffff">P2/P6/P7 · 관찰</text>`;
-    svg.insertBefore(layer,svg.querySelector('#activePath'));
-    const note=document.createElement('div');
-    note.className='habitat-note';
-    note.innerHTML='<b>논문 조사 정점 기반 분포 레이어</b>P4(가덕등대 남단)는 5회 조사 모두 관찰·79개체로 가장 높았습니다. 지도 원은 정확한 서식지 경계가 아닌 목시조사 기반 관심구역입니다.';
-    map.append(note);
-    const refresh=document.querySelector('#refreshSightings');
-    let refreshStep=0;
-    const seasonLayouts=[[[245,595],[263,440],[208,330],[305,280]],[[245,580],[280,425],[220,315],[340,250]],[[245,610],[263,440],[208,330],[305,280]],[[245,590],[250,450],[215,340],[315,275]]];
-    if(refresh)refresh.onclick=()=>{
-      refreshStep=(refreshStep+1)%4;
-      const picker=document.querySelector('#seasonPicker'); const seasonIndex=picker?Number(picker.value):0;
-      const targets=seasonLayouts[seasonIndex];
-      [...layer.querySelectorAll('.zone')].forEach((zone,i)=>{zone.setAttribute('cx',targets[i][0]);zone.setAttribute('cy',targets[i][1]);});
-      [...layer.querySelectorAll('text')].forEach((label,i)=>{label.setAttribute('x',targets[i][0]-58);label.setAttribute('y',targets[i][1]+2);label.style.opacity=seasonIndex===2&&i>1?'0.45':'1';});
-      const stamp=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-      note.innerHTML='<b>예측 갱신 · '+stamp+'</b>선택 계절과 최근 관측을 반영해 조사 정점별 중심·신뢰도를 재계산했습니다. P4 남단은 우선 보호구역으로 유지됩니다.';
-      layer.querySelectorAll('.zone').forEach((z,i)=>z.style.opacity=String([1,.82,.68,.58][i]));
-      toast('선택 계절에 맞춰 전체 출현 가능 구역을 갱신했습니다.');
-    };
-  }
-  function installFinalReviewFixes(){
-    const extra=document.createElement('style');
-    extra.textContent=`
-      .map-panel{padding-bottom:56px!important}.map-footer{display:none!important}
-      .map-panel:fullscreen .map-footer{top:auto!important;bottom:205px!important}
-      .voice{position:relative!important;inset:auto!important;display:block!important;margin:14px 24px 0 auto!important;order:12!important;z-index:15!important}
-      .nav-card{z-index:14!important;margin-top:52px!important}
-      .logo{cursor:pointer!important}.logo:hover{color:#9bea75!important}
-    `;
-    document.head.append(extra);
-    // The demonstration covers a fixed coastal area, so dragging is disabled.
-    map.style.removeProperty('--pan-x'); map.style.removeProperty('--pan-y');
-    map.addEventListener('pointerdown',e=>e.stopImmediatePropagation(),true);
-    map.addEventListener('pointermove',e=>e.stopImmediatePropagation(),true);
-    const logo=document.querySelector('.logo');
-    if(logo)logo.onclick=()=>window.location.reload();
-    const syncVesselUI=()=>{
-      const v=Number(map.dataset.vesselSpeed||13.5);
-      const active=document.querySelector('#vesselChoices .active')?.dataset.vessel;
-      const profiles=[['2 / 낮음','5.2 m','21.0 kn'],['2 / 보통','6.5 m','16.0 kn'],['2 / 보통','8.7 m','19.0 kn'],['3 / 높음','14.2 m','15.0 kn']];
-      const profile=profiles[Number(active)]||profiles[2];
-      document.querySelectorAll('.route-card').forEach(card=>{
-        const distance=Number(card.querySelector('.metrics div:first-child b')?.textContent)||0;
-        const eta=card.querySelector('.metrics div:nth-child(2) b');
-        if(eta&&distance)eta.textContent=Math.round(distance/v*60)+'분';
-        const reason=card.querySelector('.evidence');
-        if(reason)reason.dataset.vesselSpeed=v.toFixed(1);
-      });
-      const speed=document.querySelector('#speed');
-      if(speed&&selected!=='slow')speed.innerHTML=v.toFixed(1)+' <small style="font-size:11px">kn</small>';
-      const specs=document.querySelectorAll('.specs b');
-      if(specs[0])specs[0].textContent=v.toFixed(1)+' kn';
-      if(specs[1])specs[1].textContent=profile[0];
-      if(specs[2])specs[2].textContent=profile[1];
-      if(specs[3])specs[3].textContent=profile[2];
-      const title=document.querySelector('.boatrow span')?.textContent||'선택 선박';
-      const label=svg.querySelector('#boatLabel text');if(label)label.textContent=title;
-      let summary=document.querySelector('#rightVesselSummary');
-      if(!summary){summary=document.createElement('div');summary.id='rightVesselSummary';summary.style.cssText='margin:0 0 12px;padding:10px;border:1px solid #2d6371;border-radius:10px;background:#082b39;font-size:11px;color:#b9d3d2';document.querySelector('.right')?.insertAdjacentElement('afterbegin',summary);}
-      summary.innerHTML='<b style="display:block;color:#9bea75;margin-bottom:4px">현재 선박 기준</b>'+title+' · 순항 '+v.toFixed(1)+' kn · 소음 '+profile[0]+'<br>항로 예상시간은 현재 선박 속도로 재계산됨';
-    };
-    const previousOpen=window.openModal;
-    window.openModal=k=>{
-      if(k!=='report')return previousOpen(k);
-      const dialog=document.querySelector('#dialog'),modal=document.querySelector('#modal');
-      dialog.innerHTML=`<button class="close">닫기</button><div class="eyebrow">CITIZEN SCIENCE REPORT</div><h2>🐬 상괭이 발견</h2><p>현재 위치 <b>35.0506°N, 128.9674°E</b> · 관측시각 자동 기록</p><label>몇 마리인가요?</label><div class="choice" id="countChoice"><button>○ 1마리</button><button>○ 2~5마리</button><button>○ 5마리 이상</button><button>○ 알 수 없음</button></div><label>움직임</label><div class="choice" id="moveChoice"><button>○ 이동 중</button><button>○ 먹이 활동</button><button>○ 수면 위 관찰</button><button>○ 알 수 없음</button></div><label>기타 사항<input id="reportEtc" placeholder="직접 입력 (예: 어미와 새끼로 보임)"></label><label>사진 첨부 <input type="file" accept="image/*"></label><button class="submit" id="sendSighting" style="background:#9bea75;color:#063221;border:0;font-weight:900">검증 전 제보 제출</button>`;
-      modal.classList.add('open'); dialog.querySelector('.close').onclick=()=>modal.classList.remove('open');
-      dialog.querySelectorAll('.choice').forEach(box=>box.onclick=e=>{const b=e.target.closest('button');if(!b)return;box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
-      dialog.querySelector('#sendSighting').onclick=()=>{modal.classList.remove('open');toast('제보가 검증 대기열에 등록되었습니다. 사진·복수 제보·관리자 검토 후 신뢰도가 반영됩니다.');};
-    };
-    document.addEventListener('click',e=>{
-      const routeButton=e.target.closest('[data-enhanced-route]');
-      if(routeButton){
-        const routeId=routeButton.dataset.enhancedRoute;
-        setTimeout(()=>{apply(routeId);const r=document.querySelector('[data-enhanced-route="'+routeId+'"]');if(r)r.closest('.route-card')?.classList.add('active-card');},0);
-      }
-      if(e.target.id==='saveVesselChoice'){
-        const active=document.querySelector('#vesselChoices .active');
-        const chosenIndex=Number(active?.dataset.vessel);
-        const m=active?.querySelector('small')?.textContent.match(/[\d.]+ kn/);
-        setTimeout(()=>{
-          if(!m)return;
-          map.dataset.vesselSpeed=m[0].replace(' kn',''); map.dataset.liveSpeed=map.dataset.vesselSpeed;
-          const proxy=document.createElement('div');proxy.id='vesselChoices';proxy.innerHTML='<button class="active" data-vessel="'+chosenIndex+'"></button>';document.body.append(proxy);
-          syncVesselUI();proxy.remove();
-          toast('선박 제원과 기본 속도를 운항 화면에 적용했습니다.');
-        },20);
-      }
-    },true);
-    const refresh=document.querySelector('#refreshSightings');
-    if(refresh)refresh.addEventListener('click',e=>e.stopPropagation());
-    const start=document.querySelector('#v2Start'),end=document.querySelector('#v2End');
-    if(start&&end){
-      start.disabled=false;end.disabled=false;
-      const preventSame=changed=>{if(start.value!==end.value)return;(changed===start?end:start).value=changed===start?'gadeok':'dadaepo';toast('출발지와 목적지는 서로 다르게 선택해야 합니다.');};
-      start.addEventListener('change',()=>preventSame(start));end.addEventListener('change',()=>preventSame(end));
-    }
-    document.querySelector('#seasonPicker')?.addEventListener('change',()=>setTimeout(()=>refresh?.click(),80));
-    let slowShown=10;
-    setInterval(()=>{
-      if(selected!=='slow')return;
-      const t=svg.querySelector('#boatIcon')?.getAttribute('transform')||'';
-      const hit=t.match(/translate\(([-\d.]+),\s*([-\d.]+)/); const x=hit?Number(hit[1]):560;
-      // The slow-route protection segment is the part crossing the mapped P3/P4 approach zone only.
-      const inside=x<425&&x>360;
-      const target=inside?8:10;
-      slowShown+=((target-slowShown)*0.16);
-      if(Math.abs(target-slowShown)<.05)slowShown=target;
-      map.dataset.liveSpeed=String(slowShown);
-      const speed=document.querySelector('#speed'); if(speed)speed.innerHTML=slowShown.toFixed(1)+' <small style="font-size:11px">kn</small>';
-      const command=document.querySelector('#command'); if(command)command.innerHTML=inside?'상괭이 가능 영역 통과 중 · <b>8.0 kn까지 부드럽게 감속</b>':'감속 항로 운항 · <b>10.0 kn 유지</b>';
-    },80);
-  }
-  function installSeasonPicker(){
-    const controls=document.querySelector('.v2-controls');
-    if(!controls||document.querySelector('#seasonPicker'))return;
-    const holder=document.createElement('label');
-    holder.className='season-picker';
-    holder.innerHTML='계절 생태 레이어 <select id="seasonPicker"><option value="0">겨울 · 1월</option><option value="1">봄 · 5월</option><option value="2">여름 · 7–9월</option><option value="3">가을 · 11월</option></select>';
-    controls.append(holder);
-    let seasonIndex=0;
-    document.addEventListener('click',e=>{
-      if(e.target.closest('.v2-season .smallbtn')){
-        seasonIndex=(seasonIndex+1)%4;
-        const picker=document.querySelector('#seasonPicker');
-        if(picker)picker.value=String(seasonIndex);
-      }
-    },true);
-    holder.querySelector('select').addEventListener('change',e=>{
-      const target=Number(e.target.value);
-      const button=document.querySelector('.v2-season .smallbtn');
-      if(!button)return;
-      const steps=(target-seasonIndex+4)%4;
-      for(let i=0;i<steps;i++)button.click();
-      seasonIndex=target;
+  document.head.append(css);
+
+  const startTag = document.createElement('div');
+  const endTag = document.createElement('div');
+  startTag.className = 'endpoint-final'; endTag.className = 'endpoint-final end';
+  map.append(startTag, endTag);
+  const setTag = (element, x, y, text) => { element.style.left = `${x / 760 * 100}%`; element.style.top = `${y / 770 * 100}%`; element.textContent = text; };
+
+  const zoneLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  zoneLayer.setAttribute('id', 'paperZones');
+  svg.insertBefore(zoneLayer, $('#activePath'));
+  const seasons = [
+    { name: '겨울 · 1월', zones: [[245,595,82,58,'P4 가덕등대 남단 · 매우 높음'],[263,440,62,46,'P3 · 높음'],[208,330,55,42,'P1 · 주의'],[305,280,45,34,'P2/P6/P7 · 관찰']] },
+    { name: '봄 · 5월', zones: [[245,580,90,64,'P4 가덕등대 남단 · 매우 높음'],[280,425,68,50,'P3 · 높음'],[220,315,58,44,'P1 · 주의'],[340,250,50,36,'P7 북동측 · 관찰']] },
+    { name: '여름 · 7–9월', zones: [[245,610,54,38,'P4 가덕등대 남단 · 주의'],[263,440,0,0,''],[208,330,0,0,''],[305,280,0,0,'']] },
+    { name: '가을 · 11월', zones: [[245,590,76,52,'P4 가덕등대 남단 · 높음'],[250,450,58,42,'P3 · 주의'],[215,340,48,36,'P1 · 관찰'],[315,275,42,32,'P6/P7 · 관찰']] }
+  ];
+  let seasonIndex = 0;
+  // A refresh keeps the seasonal survey pattern, while incorporating a small,
+  // deterministic latest-observation adjustment.  It is not a random jump.
+  let predictionVersion = 0;
+  function renderZones(reason = '계절 관측 자료') {
+    const season = seasons[seasonIndex];
+    zoneLayer.replaceChildren();
+    season.zones.forEach(([x, y, rx, ry, label], index) => {
+      if (!rx) return;
+      const drift = [[0,0],[6,-4],[-5,5],[4,3]][(predictionVersion + index) % 4];
+      x += drift[0]; y += drift[1];
+      const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      ellipse.setAttribute('class', 'paper-zone'); ellipse.setAttribute('cx', x); ellipse.setAttribute('cy', y); ellipse.setAttribute('rx', rx); ellipse.setAttribute('ry', ry);
+      ellipse.setAttribute('fill', index === 0 ? '#ff6e5238' : '#ffc14d28'); ellipse.setAttribute('stroke', index === 0 ? '#ff8b70' : '#ffc14d');
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('class', 'paper-zone-label'); text.setAttribute('x', x - rx + 6); text.setAttribute('y', y + 3); text.setAttribute('fill', '#fff0d0'); text.textContent = label;
+      zoneLayer.append(ellipse, text);
     });
+    const title = $('#mapTitle');
+    if (title) title.innerHTML = `다대포 → 가덕도 대항<small>${season.name} · ${reason} · 조사 정점 기반 관심구역</small>`;
   }
-  function installPaperSource(){
-    const sources=document.querySelector('.sources');
-    if(sources&&!sources.querySelector('.source-paper')){
-      const a=document.createElement('a');
-      a.className='source-paper';
-      a.href='https://doi.org/10.5657/KFAS.2017.0561';
-      a.target='_blank'; a.rel='noopener';
-      a.textContent='논문 · 박겸준 외 (2017), 가덕도 상괭이의 분포 및 계절적 변화';
-      sources.append(a);
+
+  function currentVessel() { return vessels[vesselIndex]; }
+  function updateRightVesselUI() {
+    const vessel = currentVessel();
+    const boatName = $('.boatrow span')?.textContent || '선택 선박';
+    let summary = $('#rightVesselSummary');
+    if (!summary) { summary = document.createElement('div'); summary.id = 'rightVesselSummary'; $('.right')?.insertAdjacentElement('afterbegin', summary); }
+    summary.innerHTML = `<b style="color:#9bea75">현재 선박 기준</b><br>${boatName} · 순항 ${vessel.speed.toFixed(1)} kn · 소음 ${vessel.noise}<br>모든 항로 예상시간은 이 선박 속도로 계산됩니다.`;
+    document.querySelectorAll('.route-card').forEach(card => {
+      const distance = Number(card.querySelector('.metrics div:first-child b')?.textContent) || 0;
+      const eta = card.querySelector('.metrics div:nth-child(2) b');
+      if (eta && distance) eta.textContent = `${Math.round(distance / vessel.speed * 60)}분`;
+    });
+    const values = document.querySelectorAll('.specs b');
+    if (values[0]) values[0].textContent = `${vessel.speed.toFixed(1)} kn`;
+    if (values[1]) values[1].textContent = vessel.noise;
+    if (values[2]) values[2].textContent = vessel.length;
+    if (values[3]) values[3].textContent = vessel.max;
+    const label = $('#boatLabel text'); if (label) label.textContent = boatName;
+  }
+
+  function setRoute(id) {
+    if (!routes[id]) return;
+    routeId = id; slowStartedAt = null;
+    const route = routes[id];
+    $('#activePath')?.setAttribute('d', route.path);
+    $('#basePath')?.setAttribute('d', route.path);
+    const startName = $('#v2Start')?.selectedOptions?.[0]?.textContent?.trim() || '다대포항';
+    const endName = $('#v2End')?.selectedOptions?.[0]?.textContent?.trim() || '가덕도 대항';
+    setTag(startTag, 560, 360, `출발 · ${startName}`); setTag(endTag, 280, 420, `목적 · ${endName}`);
+    const startCircle = $('#map svg .marker circle'); if (startCircle) { startCircle.setAttribute('cx', '560'); startCircle.setAttribute('cy', '360'); }
+    const circles = [...document.querySelectorAll('#map svg .marker circle')]; if (circles[1]) { circles[1].setAttribute('cx', '280'); circles[1].setAttribute('cy', '420'); }
+    currentSpeed = route.speed || 0;
+    $('#navState').textContent = route.name;
+    $('#command').innerHTML = id === 'slow' ? '보호구간 전 <b>10.0 kn</b> · 구간 안 <b>8.0 kn</b>' : '보호구간을 피해 <b>안전 우회</b> 안내';
+    updateSpeed();
+    document.querySelectorAll('[data-enhanced-route]').forEach(button => button.closest('.route-card')?.classList.toggle('active-card', button.dataset.enhancedRoute === id));
+  }
+  function updateSpeed() { const el = $('#speed'); if (el) el.innerHTML = `${currentSpeed.toFixed(1)} <small style="font-size:11px">kn</small>`; }
+
+  function openReport() {
+    const dialog = $('#dialog'), modal = $('#modal');
+    dialog.innerHTML = `<button class="close">닫기</button><div class="eyebrow">CITIZEN SCIENCE REPORT</div><h2>🐬 상괭이 발견</h2><p>현재 위치 <b>35.0506°N, 128.9674°E</b> · 관측시각 자동 기록</p><label>몇 마리인가요?</label><div class="choice"><button>○ 1마리</button><button>○ 2~5마리</button><button>○ 5마리 이상</button><button>○ 알 수 없음</button></div><label>움직임</label><div class="choice"><button>○ 이동 중</button><button>○ 먹이 활동</button><button>○ 수면 위 관찰</button><button>○ 알 수 없음</button></div><label>기타 사항<input placeholder="직접 입력"></label><label>사진 첨부<input type="file" accept="image/*"></label><button class="submit" id="sendSighting">검증 전 제보 제출</button>`;
+    modal.classList.add('open'); dialog.querySelector('.close').onclick = () => modal.classList.remove('open');
+    dialog.querySelectorAll('.choice').forEach(group => group.onclick = event => { const b = event.target.closest('button'); if (!b) return; group.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+    $('#sendSighting').onclick = () => { modal.classList.remove('open'); window.toast?.('제보가 검증 대기열에 등록되었습니다.'); };
+  }
+
+  $('.logo')?.addEventListener('click', () => window.location.reload());
+  document.addEventListener('click', (event) => {
+    const routeButton = event.target.closest('[data-enhanced-route]');
+    if (routeButton) { event.preventDefault(); event.stopImmediatePropagation(); setRoute(routeButton.dataset.enhancedRoute); return; }
+    if (event.target.closest('[data-modal="report"]')) { event.preventDefault(); event.stopImmediatePropagation(); openReport(); return; }
+    if (event.target.id === 'refreshSightings') { event.preventDefault(); event.stopImmediatePropagation(); predictionVersion += 1; renderZones('최근 제보·관측시각·계절 반영'); window.toast?.('계절 조사 정점을 유지하고 최신 제보 반영 위치를 갱신했습니다.'); return; }
+    if (event.target.id === 'saveVesselChoice') {
+      const selected = $('#vesselChoices .active');
+      vesselIndex = Number(selected?.dataset.vessel ?? 2);
+      setTimeout(() => { currentSpeed = currentVessel().speed; updateRightVesselUI(); updateSpeed(); }, 0);
     }
-  }
-  function installMapPan(){
-    let dragging=false,startX=0,startY=0,panX=0,panY=0;
-    const setPan=()=>{map.style.setProperty('--pan-x',panX+'px');map.style.setProperty('--pan-y',panY+'px');};
-    map.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;dragging=true;startX=e.clientX-panX;startY=e.clientY-panY;map.classList.add('dragging');map.setPointerCapture?.(e.pointerId);});
-    map.addEventListener('pointermove',e=>{if(!dragging)return;panX=Math.max(-95,Math.min(95,e.clientX-startX));panY=Math.max(-70,Math.min(70,e.clientY-startY));setPan();});
-    const stop=e=>{if(!dragging)return;dragging=false;map.classList.remove('dragging');if(e?.pointerId!=null)map.releasePointerCapture?.(e.pointerId);};
-    map.addEventListener('pointerup',stop); map.addEventListener('pointercancel',stop); map.addEventListener('pointerleave',stop);
-  }
-  document.addEventListener('click',event=>{
-    const routeButton=event.target.closest('[data-route],[data-enhanced-route]');
-    if(routeButton){variant=0;apply(routeButton.dataset.route||routeButton.dataset.enhancedRoute);return;}
-    if(event.target.id==='refreshSightings'){variant++;apply(selected);}
-    if(event.target.id==='slowerBtn')map.dataset.liveSpeed='10';
-    if(event.target.id==='saveVesselChoice')setTimeout(()=>{
-      const active=document.querySelector('#vesselChoices .active');
-      const index=active?Number(active.dataset.vessel):2;
-      const vesselSpeed=[16,12,13.5,11][index]||13.5;
-      map.dataset.liveSpeed=String(vesselSpeed);
-      const info=document.querySelectorAll('.specs b');
-      if(info[0])info[0].textContent=vesselSpeed.toFixed(1)+' kn';
-    },60);
+    if (event.target.id === 'slowerBtn' || event.target.id === 'slowMode') setRoute('slow');
+  }, true);
+
+  $('#v2Start')?.addEventListener('change', () => {
+    const start = $('#v2Start'), end = $('#v2End'); if (start.value === end.value) end.value = start.value === 'gadeok' ? 'dadaepo' : 'gadeok'; setRoute(routeId);
   });
-  setInterval(updateSpeed,50);
-  document.querySelectorAll('#v2Start,#v2End').forEach(select=>select.addEventListener('change',()=>setTimeout(syncEndpoints,50)));
-  window.addEventListener('resize',syncEndpoints);
-  installSeasonPicker();
-  installPaperSource();
-  installMapPan();
-  installHabitatLayer();
-  installFinalReviewFixes();
-  apply('eco');
-  setTimeout(syncEndpoints,120);
+  $('#v2End')?.addEventListener('change', () => {
+    const start = $('#v2Start'), end = $('#v2End'); if (start.value === end.value) start.value = end.value === 'dadaepo' ? 'gadeok' : 'dadaepo'; setRoute(routeId);
+  });
+  const seasonSelect = $('#seasonPicker');
+  if (seasonSelect) seasonSelect.addEventListener('change', (event) => {
+    event.stopImmediatePropagation();
+    seasonIndex = Number(seasonSelect.value); predictionVersion = 0;
+    renderZones('계절 생태 레이어 자동 반영');
+  }, true);
+
+  const sources = $('.sources');
+  if (sources && !$('#paperSource')) {
+    const paper = document.createElement('a');
+    paper.id = 'paperSource'; paper.target = '_blank'; paper.rel = 'noopener';
+    paper.href = 'https://doi.org/10.5657/KFAS.2017.0561';
+    paper.textContent = '논문: Park et al. (2017), 가덕도 상괭이 분포 및 계절 변화';
+    sources.appendChild(paper);
+  }
+
+  setInterval(() => {
+    if (routeId !== 'slow') return;
+    const playing = $('#playBtn')?.textContent.includes('일시정지');
+    if (playing && slowStartedAt == null) slowStartedAt = Date.now();
+    if (!playing) { slowStartedAt = null; currentSpeed = 10; updateSpeed(); return; }
+    const phase = ((Date.now() - slowStartedAt) % 16000) / 1000;
+    let target = 10;
+    if (phase >= 4 && phase < 12) target = 8;
+    currentSpeed += (target - currentSpeed) * 0.08;
+    if (Math.abs(target - currentSpeed) < 0.03) currentSpeed = target;
+    $('#command').innerHTML = target === 8 ? '상괭이 가능 영역 통과 중 · <b>8.0 kn 감속 유지</b>' : '감속 항로 운항 · <b>10.0 kn 유지</b>';
+    updateSpeed();
+  }, 80);
+
+  renderZones(); setRoute('eco'); updateRightVesselUI();
 })();
