@@ -19,8 +19,15 @@
   ];
   let routeId = 'eco';
   let vesselIndex = 2;
-  let slowStartedAt = null;
   let currentSpeed = vessels[vesselIndex].speed;
+  let slowSpeed = 10;
+
+  const ports = {
+    dadaepo: { x: 645, y: 190, name: '다대포항' },
+    noksado: { x: 425, y: 305, name: '눌차도 북항' },
+    gadeok: { x: 83, y: 500, name: '가덕도 천성항' },
+    jinudo: { x: 300, y: 260, name: '진우도 관찰지점' }
+  };
 
   const css = document.createElement('style');
   css.textContent = `
@@ -32,6 +39,9 @@
     .endpoint-final{position:absolute;z-index:12;padding:6px 10px;border-radius:8px;background:#062433eb;border:1px solid #75d9d0;color:#fff;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%)}
     .endpoint-final.end{border-color:#9bea75;background:#163c31ed}
     .paper-zone{stroke-width:2;stroke-dasharray:5 4;pointer-events:none}.paper-zone-label{font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3;pointer-events:none}
+    #map.v2-real svg #fixedPorts,#map.v2-real svg #fixedPorts .port-point{display:block!important}
+    .port-point circle{display:block!important;fill:#e84e4e;stroke:#fff;stroke-width:2}.port-point text{display:block!important;fill:#fff;font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3}
+    .port-point.selected circle{fill:#2196f3;stroke:#fff;stroke-width:3}.port-point.both circle{fill:#7867ff}
     #rightVesselSummary{margin:0 0 12px;padding:10px;border:1px solid #2d6371;border-radius:10px;background:#082b39;color:#c4dddd;font-size:11px;line-height:1.45}
     #sendSighting{background:#9bea75!important;color:#063221!important;border:0!important;font-weight:900!important}
     .logo{cursor:pointer!important}.logo:hover{color:#9bea75!important}
@@ -48,6 +58,22 @@
   const zoneLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   zoneLayer.setAttribute('id', 'paperZones');
   svg.insertBefore(zoneLayer, $('#activePath'));
+  const portLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  portLayer.setAttribute('id', 'fixedPorts');
+  svg.append(portLayer);
+
+  function renderPorts() {
+    const startValue = $('#v2Start')?.value || 'dadaepo';
+    const endValue = $('#v2End')?.value || 'gadeok';
+    portLayer.replaceChildren();
+    Object.entries(ports).forEach(([id, port]) => {
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const selected = id === startValue || id === endValue;
+      group.setAttribute('class', `port-point${selected ? ' selected' : ''}${id === startValue && id === endValue ? ' both' : ''}`);
+      group.innerHTML = `<circle cx="${port.x}" cy="${port.y}" r="${selected ? 8 : 6}"/><text x="${port.x + 10}" y="${port.y - 9}">${port.name}</text>`;
+      portLayer.append(group);
+    });
+  }
   const seasons = [
     { name: '겨울 · 1월', zones: [[245,595,82,58,'P4 가덕등대 남단 · 매우 높음'],[263,440,62,46,'P3 · 높음'],[208,330,55,42,'P1 · 주의'],[305,280,45,34,'P2/P6/P7 · 관찰']] },
     { name: '봄 · 5월', zones: [[245,580,90,64,'P4 가덕등대 남단 · 매우 높음'],[280,425,68,50,'P3 · 높음'],[220,315,58,44,'P1 · 주의'],[340,250,50,36,'P7 북동측 · 관찰']] },
@@ -84,9 +110,16 @@
     if (!summary) { summary = document.createElement('div'); summary.id = 'rightVesselSummary'; $('.right')?.insertAdjacentElement('afterbegin', summary); }
     summary.innerHTML = `<b style="color:#9bea75">현재 선박 기준</b><br>${boatName} · 순항 ${vessel.speed.toFixed(1)} kn · 소음 ${vessel.noise}<br>모든 항로 예상시간은 이 선박 속도로 계산됩니다.`;
     document.querySelectorAll('.route-card').forEach(card => {
-      const distance = Number(card.querySelector('.metrics div:first-child b')?.textContent) || 0;
+      const routeButton = card.querySelector('[data-enhanced-route]');
+      const cardRoute = routeButton?.dataset.enhancedRoute || 'eco';
+      const distance = parseFloat(card.querySelector('.metrics div:first-child b')?.textContent || '0');
       const eta = card.querySelector('.metrics div:nth-child(2) b');
-      if (eta && distance) eta.textContent = `${Math.round(distance / vessel.speed * 60)}분`;
+      const routeFactor = { eco: .92, slow: .72, outer: .96, north: .82, safety: 0 }[cardRoute] ?? .9;
+      const effectiveSpeed = cardRoute === 'slow'
+        ? Math.min(10, vessel.speed) * routeFactor
+        : vessel.speed * routeFactor;
+      if (eta && distance && effectiveSpeed) eta.textContent = `${Math.round(distance / effectiveSpeed * 60)}분`;
+      if (eta && cardRoute === 'safety') eta.textContent = '재평가';
     });
     const values = document.querySelectorAll('.specs b');
     if (values[0]) values[0].textContent = `${vessel.speed.toFixed(1)} kn`;
@@ -98,19 +131,25 @@
 
   function setRoute(id) {
     if (!routes[id]) return;
-    routeId = id; slowStartedAt = null;
+    routeId = id;
     const route = routes[id];
-    $('#activePath')?.setAttribute('d', route.path);
-    $('#basePath')?.setAttribute('d', route.path);
-    const startName = $('#v2Start')?.selectedOptions?.[0]?.textContent?.trim() || '다대포항';
-    const endName = $('#v2End')?.selectedOptions?.[0]?.textContent?.trim() || '가덕도 대항';
-    setTag(startTag, 560, 360, `출발 · ${startName}`); setTag(endTag, 280, 420, `목적 · ${endName}`);
-    const startCircle = $('#map svg .marker circle'); if (startCircle) { startCircle.setAttribute('cx', '560'); startCircle.setAttribute('cy', '360'); }
-    const circles = [...document.querySelectorAll('#map svg .marker circle')]; if (circles[1]) { circles[1].setAttribute('cx', '280'); circles[1].setAttribute('cy', '420'); }
+    const startId = $('#v2Start')?.value || 'dadaepo';
+    const endId = $('#v2End')?.value || 'gadeok';
+    const start = ports[startId], end = ports[endId];
+    const bend = id === 'outer' ? 110 : id === 'north' ? -75 : id === 'eco' ? 65 : 12;
+    const generatedPath = startId === endId
+      ? `M${start.x} ${start.y}`
+      : `M${start.x} ${start.y} C${start.x - 35} ${start.y + bend} ${end.x + 55} ${end.y + bend} ${end.x} ${end.y}`;
+    $('#activePath')?.setAttribute('d', generatedPath);
+    $('#basePath')?.setAttribute('d', generatedPath);
+    setTag(startTag, start.x, start.y, `출발 · ${start.name}`);
+    setTag(endTag, end.x, end.y, `목적 · ${end.name}`);
+    renderPorts();
     currentSpeed = route.speed || 0;
     $('#navState').textContent = route.name;
     $('#command').innerHTML = id === 'slow' ? '보호구간 전 <b>10.0 kn</b> · 구간 안 <b>8.0 kn</b>' : '보호구간을 피해 <b>안전 우회</b> 안내';
     updateSpeed();
+    updateRightVesselUI();
     document.querySelectorAll('[data-enhanced-route]').forEach(button => button.closest('.route-card')?.classList.toggle('active-card', button.dataset.enhancedRoute === id));
   }
   function updateSpeed() { const el = $('#speed'); if (el) el.innerHTML = `${currentSpeed.toFixed(1)} <small style="font-size:11px">kn</small>`; }
@@ -137,12 +176,14 @@
     if (event.target.id === 'slowerBtn' || event.target.id === 'slowMode') setRoute('slow');
   }, true);
 
-  $('#v2Start')?.addEventListener('change', () => {
-    const start = $('#v2Start'), end = $('#v2End'); if (start.value === end.value) end.value = start.value === 'gadeok' ? 'dadaepo' : 'gadeok'; setRoute(routeId);
-  });
-  $('#v2End')?.addEventListener('change', () => {
-    const start = $('#v2Start'), end = $('#v2End'); if (start.value === end.value) start.value = end.value === 'dadaepo' ? 'gadeok' : 'dadaepo'; setRoute(routeId);
-  });
+  $('#v2Start')?.addEventListener('change', (event) => {
+    event.stopImmediatePropagation();
+    setRoute(routeId);
+  }, true);
+  $('#v2End')?.addEventListener('change', (event) => {
+    event.stopImmediatePropagation();
+    setRoute(routeId);
+  }, true);
   let seasonSelect = $('#seasonPicker');
   if (!seasonSelect && $('#v2Season')) {
     const holder = $('#v2Season');
@@ -172,19 +213,33 @@
     });
   }, 700);
 
+  function boatCoordinates() {
+    const transform = $('#boatIcon')?.getAttribute('transform') || '';
+    const match = transform.match(/translate\(\s*([\d.-]+)[,\s]+([\d.-]+)/);
+    return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+  }
+  function boatInsideWarningZone(point) {
+    if (!point) return false;
+    return [...document.querySelectorAll('#paperZones ellipse, #map .hazard')].some(zone => {
+      const cx = Number(zone.getAttribute('cx')), cy = Number(zone.getAttribute('cy'));
+      const rx = Number(zone.getAttribute('rx')), ry = Number(zone.getAttribute('ry'));
+      if (!rx || !ry) return false;
+      return ((point.x - cx) ** 2 / rx ** 2) + ((point.y - cy) ** 2 / ry ** 2) <= 1;
+    });
+  }
   setInterval(() => {
     if (routeId !== 'slow') return;
     const playing = $('#playBtn')?.textContent.includes('일시정지');
-    if (playing && slowStartedAt == null) slowStartedAt = Date.now();
-    if (!playing) { slowStartedAt = null; currentSpeed = 10; updateSpeed(); return; }
-    const phase = ((Date.now() - slowStartedAt) % 16000) / 1000;
-    let target = 10;
-    if (phase >= 4 && phase < 12) target = 8;
-    currentSpeed += (target - currentSpeed) * 0.08;
-    if (Math.abs(target - currentSpeed) < 0.03) currentSpeed = target;
-    $('#command').innerHTML = target === 8 ? '상괭이 가능 영역 통과 중 · <b>8.0 kn 감속 유지</b>' : '감속 항로 운항 · <b>10.0 kn 유지</b>';
+    const inside = playing && boatInsideWarningZone(boatCoordinates());
+    const target = inside ? 8 : 10;
+    slowSpeed += (target - slowSpeed) * 0.14;
+    if (Math.abs(target - slowSpeed) < 0.03) slowSpeed = target;
+    currentSpeed = slowSpeed;
+    $('#command').innerHTML = inside
+      ? '상괭이 주의구간 통과 중 · <b>8.0 kn 감속</b>'
+      : '주의구간 밖 · <b>10.0 kn 정상 운항</b>';
     updateSpeed();
-  }, 80);
+  }, 100);
 
-  renderZones(); setRoute('eco'); updateRightVesselUI();
+  renderZones(); renderPorts(); setRoute('eco'); updateRightVesselUI();
 })();
