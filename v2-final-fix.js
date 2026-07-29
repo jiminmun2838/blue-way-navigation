@@ -12,16 +12,20 @@
   const style=document.createElement('style');
   style.textContent=`
     .map-panel{align-self:start!important;height:auto!important;min-height:0!important;overflow:visible!important;padding:0 0 22px!important;display:flex!important;flex-direction:column!important}
-    .map{height:500px!important;min-height:0!important;transform:translateX(-18px);width:calc(100% + 18px)!important;flex:none!important}
-    .map.v2-real{background-position:36% center!important}
-    .map.v2-real svg{transform:none!important;width:100%!important}
-    .nav-card{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;width:calc(100% - 36px)!important;margin:18px auto 0!important;flex:none!important}
+    .map{height:500px!important;min-height:0!important;transform:translateX(-18px);width:calc(100% + 18px)!important;flex:none!important;touch-action:none!important;cursor:grab!important}
+    .map.dragging{cursor:grabbing!important}
+    .map.v2-real{background-position:calc(36% + var(--pan-x, 0px)) calc(50% + var(--pan-y, 0px))!important}
+    .map.v2-real svg{transform:translate(var(--pan-x, 0px),var(--pan-y, 0px))!important;width:100%!important}
+    .nav-card{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;width:calc(100% - 36px)!important;margin:28px auto 0!important;flex:none!important}
     .nav-controls{gap:4px!important;margin-top:7px!important}
     .map-panel:fullscreen{display:flex!important;flex-direction:column!important;padding:14px!important;background:#061c29!important}
     .map-panel:fullscreen .map{height:calc(100vh - 184px)!important;width:100%!important;transform:none!important;flex:1 1 auto!important}
     .map-panel:fullscreen .nav-card{display:block!important;width:min(680px,94%)!important;margin:12px auto 0!important;z-index:20!important}
     .endpoint-live{position:absolute;z-index:11;transform:translate(-50%,-50%);padding:6px 9px;border-radius:8px;border:1px solid #74d9d0;background:#062433ed;color:#effffb;font-size:11px;font-weight:800;white-space:nowrap;pointer-events:none;box-shadow:0 3px 10px #00172177}
     .endpoint-live.end{border-color:#9bea75;background:#163c31ed}
+    .map.v2-real .endpoint-live,.map.v2-real .hazard-label{margin-left:var(--pan-x, 0px)!important;margin-top:var(--pan-y, 0px)!important}
+    #beginVoyage{display:block!important;width:100%!important;margin-top:16px!important;background:#9bea75!important;color:#063221!important;border:0!important;border-radius:9px!important;padding:13px!important;font-size:14px!important;font-weight:900!important;text-shadow:none!important}
+    .season-picker{grid-column:1/-1!important}.season-picker select{font-weight:800!important}.source-paper{display:block!important;margin-top:8px!important;color:#78dcd5!important;font-size:10px!important;line-height:1.45!important;text-decoration:none!important}
   `;
   document.head.append(style);
   let selected='eco',variant=0;
@@ -66,6 +70,49 @@
     const el=document.querySelector('#speed');
     if(el)el.innerHTML=v.toFixed(1)+' <small style="font-size:11px">kn</small>';
   }
+  function installSeasonPicker(){
+    const controls=document.querySelector('.v2-controls');
+    if(!controls||document.querySelector('#seasonPicker'))return;
+    const holder=document.createElement('label');
+    holder.className='season-picker';
+    holder.innerHTML='계절 생태 레이어 <select id="seasonPicker"><option value="0">겨울 · 1월</option><option value="1">봄 · 5월</option><option value="2">여름 · 7–9월</option><option value="3">가을 · 11월</option></select>';
+    controls.append(holder);
+    let seasonIndex=0;
+    document.addEventListener('click',e=>{
+      if(e.target.closest('.v2-season .smallbtn')){
+        seasonIndex=(seasonIndex+1)%4;
+        const picker=document.querySelector('#seasonPicker');
+        if(picker)picker.value=String(seasonIndex);
+      }
+    },true);
+    holder.querySelector('select').addEventListener('change',e=>{
+      const target=Number(e.target.value);
+      const button=document.querySelector('.v2-season .smallbtn');
+      if(!button)return;
+      const steps=(target-seasonIndex+4)%4;
+      for(let i=0;i<steps;i++)button.click();
+      seasonIndex=target;
+    });
+  }
+  function installPaperSource(){
+    const sources=document.querySelector('.sources');
+    if(sources&&!sources.querySelector('.source-paper')){
+      const a=document.createElement('a');
+      a.className='source-paper';
+      a.href='https://doi.org/10.5657/KFAS.2017.0561';
+      a.target='_blank'; a.rel='noopener';
+      a.textContent='논문 · 박겸준 외 (2017), 가덕도 상괭이의 분포 및 계절적 변화';
+      sources.append(a);
+    }
+  }
+  function installMapPan(){
+    let dragging=false,startX=0,startY=0,panX=0,panY=0;
+    const setPan=()=>{map.style.setProperty('--pan-x',panX+'px');map.style.setProperty('--pan-y',panY+'px');};
+    map.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;dragging=true;startX=e.clientX-panX;startY=e.clientY-panY;map.classList.add('dragging');map.setPointerCapture?.(e.pointerId);});
+    map.addEventListener('pointermove',e=>{if(!dragging)return;panX=Math.max(-95,Math.min(95,e.clientX-startX));panY=Math.max(-70,Math.min(70,e.clientY-startY));setPan();});
+    const stop=e=>{if(!dragging)return;dragging=false;map.classList.remove('dragging');if(e?.pointerId!=null)map.releasePointerCapture?.(e.pointerId);};
+    map.addEventListener('pointerup',stop); map.addEventListener('pointercancel',stop); map.addEventListener('pointerleave',stop);
+  }
   document.addEventListener('click',event=>{
     const routeButton=event.target.closest('[data-route],[data-enhanced-route]');
     if(routeButton){variant=0;apply(routeButton.dataset.route||routeButton.dataset.enhancedRoute);return;}
@@ -83,6 +130,9 @@
   setInterval(updateSpeed,50);
   document.querySelectorAll('#v2Start,#v2End').forEach(select=>select.addEventListener('change',()=>setTimeout(syncEndpoints,50)));
   window.addEventListener('resize',syncEndpoints);
+  installSeasonPicker();
+  installPaperSource();
+  installMapPan();
   apply('eco');
   setTimeout(syncEndpoints,120);
 })();
