@@ -162,9 +162,12 @@
   function buildMarinePath(id, start, end, startId, endId) {
     if (start.x === end.x && start.y === end.y) return `M${start.x} ${start.y}`;
     if ([startId, endId].includes('daehang') && [startId, endId].includes('gadeok')) {
-      const direct = [[83,500],[180,535],[140,620],[80,665],[35,610]];
-      const points = startId === 'gadeok' ? direct : direct.slice().reverse();
-      return points.map((point, index) => `${index ? 'L' : 'M'}${point[0]} ${point[1]}`).join(' ');
+      const direct = id === 'slow'
+        ? [[83,500],[135,535],[105,580],[35,610]]
+        : [[83,500],[180,535],[140,620],[80,665],[35,610]];
+      let points = (startId === 'gadeok' ? direct : direct.slice().reverse()).map(([x,y]) => ({x,y}));
+      if (id === 'eco') points = avoidActiveZones(points);
+      return points.map((point, index) => `${index ? 'L' : 'M'}${point.x} ${point.y}`).join(' ');
     }
     const normalizedStart = startId === 'daehang' ? 'gadeok' : startId;
     const normalizedEnd = endId === 'daehang' ? 'gadeok' : endId;
@@ -206,23 +209,31 @@
   }
   function avoidActiveZones(initialPoints) {
     let points = initialPoints.slice();
-    for (let pass = 0; pass < 3; pass += 1) {
+    for (let pass = 0; pass < 8; pass += 1) {
       visibleZones().forEach(zone => {
         const revised = [points[0]];
         for (let index = 0; index < points.length - 1; index += 1) {
           const a = revised.at(-1), b = points[index + 1];
           if (segmentHitsZone(a, b, zone)) {
+            const margin = 34;
             const candidates = [
-              {x:zone.x+zone.rx+30,y:zone.y-zone.ry-24},
-              {x:zone.x+zone.rx+30,y:zone.y+zone.ry+24},
-              {x:zone.x,y:zone.y+zone.ry+32},
-              {x:zone.x-zone.rx-24,y:zone.y+zone.ry+28}
-            ].filter(point => !segmentHitsZone(a, point, zone, 1.04) && !segmentHitsZone(point, b, zone, 1.04));
+              [{x:zone.x-zone.rx-margin,y:zone.y-zone.ry-margin},{x:zone.x+zone.rx+margin,y:zone.y-zone.ry-margin}],
+              [{x:zone.x-zone.rx-margin,y:zone.y+zone.ry+margin},{x:zone.x+zone.rx+margin,y:zone.y+zone.ry+margin}],
+              [{x:zone.x-zone.rx-margin,y:zone.y-zone.ry-margin},{x:zone.x-zone.rx-margin,y:zone.y+zone.ry+margin}],
+              [{x:zone.x+zone.rx+margin,y:zone.y-zone.ry-margin},{x:zone.x+zone.rx+margin,y:zone.y+zone.ry+margin}]
+            ].map(pair => {
+              const ordered = Math.hypot(a.x-pair[0].x,a.y-pair[0].y) <= Math.hypot(a.x-pair[1].x,a.y-pair[1].y) ? pair : pair.slice().reverse();
+              return ordered;
+            }).filter(pair =>
+              !segmentHitsZone(a, pair[0], zone, 1.08) &&
+              !segmentHitsZone(pair[0], pair[1], zone, 1.08) &&
+              !segmentHitsZone(pair[1], b, zone, 1.08)
+            );
             const best = candidates.sort((left,right) => {
-              const score = point => Math.hypot(point.x-a.x,point.y-a.y)+Math.hypot(b.x-point.x,b.y-point.y)+(point.x<zone.x?55:0);
+              const score = pair => Math.hypot(pair[0].x-a.x,pair[0].y-a.y)+Math.hypot(pair[1].x-pair[0].x,pair[1].y-pair[0].y)+Math.hypot(b.x-pair[1].x,b.y-pair[1].y);
               return score(left)-score(right);
             })[0];
-            if (best) revised.push(best);
+            if (best) revised.push(...best);
           }
           revised.push(b);
         }
