@@ -97,6 +97,50 @@
       toast('반복 순환이 아닌 전체 조사 정점의 신뢰도를 갱신했습니다.');
     };
   }
+  function installFinalReviewFixes(){
+    const extra=document.createElement('style');
+    extra.textContent=`
+      .map-footer{top:422px!important;bottom:auto!important;z-index:7!important}
+      .map-panel:fullscreen .map-footer{top:auto!important;bottom:205px!important}
+      .voice{position:relative!important;inset:auto!important;display:block!important;margin:14px 24px 0 auto!important;order:12!important;z-index:15!important}
+      .nav-card{z-index:14!important;margin-top:30px!important}
+      .logo{cursor:pointer!important}.logo:hover{color:#9bea75!important}
+    `;
+    document.head.append(extra);
+    // The demonstration covers a fixed coastal area, so dragging is disabled.
+    map.style.removeProperty('--pan-x'); map.style.removeProperty('--pan-y');
+    map.addEventListener('pointerdown',e=>e.stopImmediatePropagation(),true);
+    map.addEventListener('pointermove',e=>e.stopImmediatePropagation(),true);
+    const logo=document.querySelector('.logo');
+    if(logo)logo.onclick=()=>window.location.reload();
+    const previousOpen=window.openModal;
+    window.openModal=k=>{
+      if(k!=='report')return previousOpen(k);
+      const dialog=document.querySelector('#dialog'),modal=document.querySelector('#modal');
+      dialog.innerHTML=`<button class="close">닫기</button><div class="eyebrow">CITIZEN SCIENCE REPORT</div><h2>🐬 상괭이 발견</h2><p>현재 위치 <b>35.0506°N, 128.9674°E</b> · 관측시각 자동 기록</p><label>몇 마리인가요?</label><div class="choice" id="countChoice"><button>○ 1마리</button><button>○ 2~5마리</button><button>○ 5마리 이상</button><button>○ 알 수 없음</button></div><label>움직임</label><div class="choice" id="moveChoice"><button>○ 이동 중</button><button>○ 먹이 활동</button><button>○ 수면 위 관찰</button><button>○ 알 수 없음</button></div><label>기타 사항<input id="reportEtc" placeholder="직접 입력 (예: 어미와 새끼로 보임)"></label><label>사진 첨부 <input type="file" accept="image/*"></label><button class="submit" id="sendSighting">검증 전 제보 제출</button>`;
+      modal.classList.add('open'); dialog.querySelector('.close').onclick=()=>modal.classList.remove('open');
+      dialog.querySelectorAll('.choice').forEach(box=>box.onclick=e=>{const b=e.target.closest('button');if(!b)return;box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+      dialog.querySelector('#sendSighting').onclick=()=>{modal.classList.remove('open');toast('제보가 검증 대기열에 등록되었습니다. 사진·복수 제보·관리자 검토 후 신뢰도가 반영됩니다.');};
+    };
+    document.addEventListener('click',e=>{
+      const routeButton=e.target.closest('[data-enhanced-route]');
+      if(routeButton){
+        const routeId=routeButton.dataset.enhancedRoute;
+        setTimeout(()=>{apply(routeId);const r=document.querySelector('[data-enhanced-route="'+routeId+'"]');if(r)r.closest('.route-card')?.classList.add('active-card');},0);
+      }
+      if(e.target.id==='saveVesselChoice')setTimeout(()=>{
+        const active=document.querySelector('#vesselChoices .active');
+        const m=active?.querySelector('small')?.textContent.match(/[\d.]+ kn/);
+        if(!m)return;
+        map.dataset.vesselSpeed=m[0].replace(' kn',''); map.dataset.liveSpeed=map.dataset.vesselSpeed;
+        updateSpeed();
+        const speedText=document.querySelector('.specs b'); if(speedText)speedText.textContent=m[0];
+        toast('선박 제원과 기본 속도를 운항 화면에 적용했습니다.');
+      },80);
+    },true);
+    const refresh=document.querySelector('#refreshSightings');
+    if(refresh)refresh.addEventListener('click',e=>e.stopPropagation());
+  }
   function installSeasonPicker(){
     const controls=document.querySelector('.v2-controls');
     if(!controls||document.querySelector('#seasonPicker'))return;
@@ -161,6 +205,7 @@
   installPaperSource();
   installMapPan();
   installHabitatLayer();
+  installFinalReviewFixes();
   apply('eco');
   setTimeout(syncEndpoints,120);
 })();
