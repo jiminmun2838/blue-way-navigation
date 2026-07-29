@@ -362,5 +362,18 @@
     updateSpeed();
   }, 100);
 
+  // First visit: show the marine-status check immediately.  After that first
+  // presentation, the launch button starts the simulation without reopening it.
+  setTimeout(() => {
+    $('#refreshSightings')?.remove();
+    $('#safeMode')?.remove();
+    const start = $('#startBtn');
+    const firstStatusScreen = start?.onclick;
+    if (start && typeof firstStatusScreen === 'function') {
+      firstStatusScreen.call(start);
+      start.onclick = () => $('#playBtn')?.click();
+    }
+  }, 180);
+
   renderZones(); renderPorts(); setRoute('eco'); updateRightVesselUI();
 })();
