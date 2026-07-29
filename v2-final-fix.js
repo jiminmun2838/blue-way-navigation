@@ -66,9 +66,36 @@
     requestAnimationFrame(syncEndpoints);
   }
   function updateSpeed(){
-    const v=Number(map.dataset.liveSpeed);
+    const inProtection=String(document.querySelector('#navState')?.textContent||'').includes('보호');
+    const v=selected==='slow'?(inProtection?8:9.5):Number(map.dataset.liveSpeed);
+    if(selected==='slow')map.dataset.liveSpeed=String(v);
     const el=document.querySelector('#speed');
     if(el)el.innerHTML=v.toFixed(1)+' <small style="font-size:11px">kn</small>';
+  }
+  function installHabitatLayer(){
+    if(!svg||svg.querySelector('.paper-habitat-layer'))return;
+    const style=document.createElement('style');
+    style.textContent=`.voice{position:relative!important;right:auto!important;bottom:auto!important;align-self:flex-end!important;order:10!important;margin:12px 24px 0 auto!important;z-index:12!important}.paper-habitat-layer .zone{stroke-width:2;stroke-dasharray:5 4;pointer-events:none}.paper-habitat-layer text{font-size:10px;font-weight:800;paint-order:stroke;stroke:#062433;stroke-width:3}.habitat-note{position:absolute;z-index:8;left:18px;bottom:15px;width:245px;padding:9px 11px;border-radius:10px;background:#062433e8;border:1px solid #efb55a;color:#fff0cc;font-size:10px;line-height:1.45;pointer-events:none}.habitat-note b{display:block;color:#ffcb73;font-size:11px;margin-bottom:2px}`;
+    document.head.append(style);
+    const layer=document.createElementNS('http://www.w3.org/2000/svg','g');
+    layer.setAttribute('class','paper-habitat-layer');
+    layer.innerHTML=`
+      <ellipse class="zone" cx="245" cy="595" rx="82" ry="58" fill="#ff6e5238" stroke="#ff8c70"/><text x="176" y="596" fill="#fff0cf">P4 가덕등대 남단 · 매우 높음</text>
+      <ellipse class="zone" cx="263" cy="440" rx="62" ry="46" fill="#ffc14d2e" stroke="#ffc14d"/><text x="211" y="441" fill="#fff0cf">P3 · 높음</text>
+      <ellipse class="zone" cx="208" cy="330" rx="55" ry="42" fill="#ffc14d24" stroke="#ffc14d"/><text x="165" y="331" fill="#fff0cf">P1 · 주의</text>
+      <ellipse class="zone" cx="305" cy="280" rx="45" ry="34" fill="#78dcd522" stroke="#78dcd5"/><text x="272" y="281" fill="#e9ffff">P2/P6/P7 · 관찰</text>`;
+    svg.insertBefore(layer,svg.querySelector('#activePath'));
+    const note=document.createElement('div');
+    note.className='habitat-note';
+    note.innerHTML='<b>논문 조사 정점 기반 분포 레이어</b>P4(가덕등대 남단)는 5회 조사 모두 관찰·79개체로 가장 높았습니다. 지도 원은 정확한 서식지 경계가 아닌 목시조사 기반 관심구역입니다.';
+    map.append(note);
+    const refresh=document.querySelector('#refreshSightings');
+    if(refresh)refresh.onclick=()=>{
+      const stamp=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      note.innerHTML='<b>예측 갱신 · '+stamp+'</b>논문 기반 장기 분포 레이어는 유지하고, 최근 제보·기상·관측시각으로 구역별 신뢰도를 재평가했습니다. P4 남단은 우선 보호구역으로 유지됩니다.';
+      layer.querySelectorAll('.zone').forEach((z,i)=>z.style.opacity=String([1,.82,.68,.58][i]));
+      toast('반복 순환이 아닌 전체 조사 정점의 신뢰도를 갱신했습니다.');
+    };
   }
   function installSeasonPicker(){
     const controls=document.querySelector('.v2-controls');
@@ -133,6 +160,7 @@
   installSeasonPicker();
   installPaperSource();
   installMapPan();
+  installHabitatLayer();
   apply('eco');
   setTimeout(syncEndpoints,120);
 })();
