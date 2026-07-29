@@ -66,9 +66,7 @@
     requestAnimationFrame(syncEndpoints);
   }
   function updateSpeed(){
-    const inProtection=String(document.querySelector('#navState')?.textContent||'').includes('보호');
-    const v=selected==='slow'?(inProtection?8:9.5):Number(map.dataset.liveSpeed);
-    if(selected==='slow')map.dataset.liveSpeed=String(v);
+    const v=Number(map.dataset.liveSpeed);
     const el=document.querySelector('#speed');
     if(el)el.innerHTML=v.toFixed(1)+' <small style="font-size:11px">kn</small>';
   }
@@ -90,20 +88,27 @@
     note.innerHTML='<b>논문 조사 정점 기반 분포 레이어</b>P4(가덕등대 남단)는 5회 조사 모두 관찰·79개체로 가장 높았습니다. 지도 원은 정확한 서식지 경계가 아닌 목시조사 기반 관심구역입니다.';
     map.append(note);
     const refresh=document.querySelector('#refreshSightings');
+    let refreshStep=0;
+    const seasonLayouts=[[[245,595],[263,440],[208,330],[305,280]],[[245,580],[280,425],[220,315],[340,250]],[[245,610],[263,440],[208,330],[305,280]],[[245,590],[250,450],[215,340],[315,275]]];
     if(refresh)refresh.onclick=()=>{
+      refreshStep=(refreshStep+1)%4;
+      const picker=document.querySelector('#seasonPicker'); const seasonIndex=picker?Number(picker.value):0;
+      const targets=seasonLayouts[seasonIndex];
+      [...layer.querySelectorAll('.zone')].forEach((zone,i)=>{zone.setAttribute('cx',targets[i][0]);zone.setAttribute('cy',targets[i][1]);});
+      [...layer.querySelectorAll('text')].forEach((label,i)=>{label.setAttribute('x',targets[i][0]-58);label.setAttribute('y',targets[i][1]+2);label.style.opacity=seasonIndex===2&&i>1?'0.45':'1';});
       const stamp=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-      note.innerHTML='<b>예측 갱신 · '+stamp+'</b>논문 기반 장기 분포 레이어는 유지하고, 최근 제보·기상·관측시각으로 구역별 신뢰도를 재평가했습니다. P4 남단은 우선 보호구역으로 유지됩니다.';
+      note.innerHTML='<b>예측 갱신 · '+stamp+'</b>선택 계절과 최근 관측을 반영해 조사 정점별 중심·신뢰도를 재계산했습니다. P4 남단은 우선 보호구역으로 유지됩니다.';
       layer.querySelectorAll('.zone').forEach((z,i)=>z.style.opacity=String([1,.82,.68,.58][i]));
-      toast('반복 순환이 아닌 전체 조사 정점의 신뢰도를 갱신했습니다.');
+      toast('선택 계절에 맞춰 전체 출현 가능 구역을 갱신했습니다.');
     };
   }
   function installFinalReviewFixes(){
     const extra=document.createElement('style');
     extra.textContent=`
-      .map-footer{top:422px!important;bottom:auto!important;z-index:7!important}
+      .map-panel{padding-bottom:56px!important}.map-footer{display:none!important}
       .map-panel:fullscreen .map-footer{top:auto!important;bottom:205px!important}
       .voice{position:relative!important;inset:auto!important;display:block!important;margin:14px 24px 0 auto!important;order:12!important;z-index:15!important}
-      .nav-card{z-index:14!important;margin-top:30px!important}
+      .nav-card{z-index:14!important;margin-top:52px!important}
       .logo{cursor:pointer!important}.logo:hover{color:#9bea75!important}
     `;
     document.head.append(extra);
@@ -113,11 +118,36 @@
     map.addEventListener('pointermove',e=>e.stopImmediatePropagation(),true);
     const logo=document.querySelector('.logo');
     if(logo)logo.onclick=()=>window.location.reload();
+    const syncVesselUI=()=>{
+      const v=Number(map.dataset.vesselSpeed||13.5);
+      const active=document.querySelector('#vesselChoices .active')?.dataset.vessel;
+      const profiles=[['2 / 낮음','5.2 m','21.0 kn'],['2 / 보통','6.5 m','16.0 kn'],['2 / 보통','8.7 m','19.0 kn'],['3 / 높음','14.2 m','15.0 kn']];
+      const profile=profiles[Number(active)]||profiles[2];
+      document.querySelectorAll('.route-card').forEach(card=>{
+        const distance=Number(card.querySelector('.metrics div:first-child b')?.textContent)||0;
+        const eta=card.querySelector('.metrics div:nth-child(2) b');
+        if(eta&&distance)eta.textContent=Math.round(distance/v*60)+'분';
+        const reason=card.querySelector('.evidence');
+        if(reason)reason.dataset.vesselSpeed=v.toFixed(1);
+      });
+      const speed=document.querySelector('#speed');
+      if(speed&&selected!=='slow')speed.innerHTML=v.toFixed(1)+' <small style="font-size:11px">kn</small>';
+      const specs=document.querySelectorAll('.specs b');
+      if(specs[0])specs[0].textContent=v.toFixed(1)+' kn';
+      if(specs[1])specs[1].textContent=profile[0];
+      if(specs[2])specs[2].textContent=profile[1];
+      if(specs[3])specs[3].textContent=profile[2];
+      const title=document.querySelector('.boatrow span')?.textContent||'선택 선박';
+      const label=svg.querySelector('#boatLabel text');if(label)label.textContent=title;
+      let summary=document.querySelector('#rightVesselSummary');
+      if(!summary){summary=document.createElement('div');summary.id='rightVesselSummary';summary.style.cssText='margin:0 0 12px;padding:10px;border:1px solid #2d6371;border-radius:10px;background:#082b39;font-size:11px;color:#b9d3d2';document.querySelector('.right')?.insertAdjacentElement('afterbegin',summary);}
+      summary.innerHTML='<b style="display:block;color:#9bea75;margin-bottom:4px">현재 선박 기준</b>'+title+' · 순항 '+v.toFixed(1)+' kn · 소음 '+profile[0]+'<br>항로 예상시간은 현재 선박 속도로 재계산됨';
+    };
     const previousOpen=window.openModal;
     window.openModal=k=>{
       if(k!=='report')return previousOpen(k);
       const dialog=document.querySelector('#dialog'),modal=document.querySelector('#modal');
-      dialog.innerHTML=`<button class="close">닫기</button><div class="eyebrow">CITIZEN SCIENCE REPORT</div><h2>🐬 상괭이 발견</h2><p>현재 위치 <b>35.0506°N, 128.9674°E</b> · 관측시각 자동 기록</p><label>몇 마리인가요?</label><div class="choice" id="countChoice"><button>○ 1마리</button><button>○ 2~5마리</button><button>○ 5마리 이상</button><button>○ 알 수 없음</button></div><label>움직임</label><div class="choice" id="moveChoice"><button>○ 이동 중</button><button>○ 먹이 활동</button><button>○ 수면 위 관찰</button><button>○ 알 수 없음</button></div><label>기타 사항<input id="reportEtc" placeholder="직접 입력 (예: 어미와 새끼로 보임)"></label><label>사진 첨부 <input type="file" accept="image/*"></label><button class="submit" id="sendSighting">검증 전 제보 제출</button>`;
+      dialog.innerHTML=`<button class="close">닫기</button><div class="eyebrow">CITIZEN SCIENCE REPORT</div><h2>🐬 상괭이 발견</h2><p>현재 위치 <b>35.0506°N, 128.9674°E</b> · 관측시각 자동 기록</p><label>몇 마리인가요?</label><div class="choice" id="countChoice"><button>○ 1마리</button><button>○ 2~5마리</button><button>○ 5마리 이상</button><button>○ 알 수 없음</button></div><label>움직임</label><div class="choice" id="moveChoice"><button>○ 이동 중</button><button>○ 먹이 활동</button><button>○ 수면 위 관찰</button><button>○ 알 수 없음</button></div><label>기타 사항<input id="reportEtc" placeholder="직접 입력 (예: 어미와 새끼로 보임)"></label><label>사진 첨부 <input type="file" accept="image/*"></label><button class="submit" id="sendSighting" style="background:#9bea75;color:#063221;border:0;font-weight:900">검증 전 제보 제출</button>`;
       modal.classList.add('open'); dialog.querySelector('.close').onclick=()=>modal.classList.remove('open');
       dialog.querySelectorAll('.choice').forEach(box=>box.onclick=e=>{const b=e.target.closest('button');if(!b)return;box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
       dialog.querySelector('#sendSighting').onclick=()=>{modal.classList.remove('open');toast('제보가 검증 대기열에 등록되었습니다. 사진·복수 제보·관리자 검토 후 신뢰도가 반영됩니다.');};
@@ -128,18 +158,42 @@
         const routeId=routeButton.dataset.enhancedRoute;
         setTimeout(()=>{apply(routeId);const r=document.querySelector('[data-enhanced-route="'+routeId+'"]');if(r)r.closest('.route-card')?.classList.add('active-card');},0);
       }
-      if(e.target.id==='saveVesselChoice')setTimeout(()=>{
+      if(e.target.id==='saveVesselChoice'){
         const active=document.querySelector('#vesselChoices .active');
+        const chosenIndex=Number(active?.dataset.vessel);
         const m=active?.querySelector('small')?.textContent.match(/[\d.]+ kn/);
-        if(!m)return;
-        map.dataset.vesselSpeed=m[0].replace(' kn',''); map.dataset.liveSpeed=map.dataset.vesselSpeed;
-        updateSpeed();
-        const speedText=document.querySelector('.specs b'); if(speedText)speedText.textContent=m[0];
-        toast('선박 제원과 기본 속도를 운항 화면에 적용했습니다.');
-      },80);
+        setTimeout(()=>{
+          if(!m)return;
+          map.dataset.vesselSpeed=m[0].replace(' kn',''); map.dataset.liveSpeed=map.dataset.vesselSpeed;
+          const proxy=document.createElement('div');proxy.id='vesselChoices';proxy.innerHTML='<button class="active" data-vessel="'+chosenIndex+'"></button>';document.body.append(proxy);
+          syncVesselUI();proxy.remove();
+          toast('선박 제원과 기본 속도를 운항 화면에 적용했습니다.');
+        },20);
+      }
     },true);
     const refresh=document.querySelector('#refreshSightings');
     if(refresh)refresh.addEventListener('click',e=>e.stopPropagation());
+    const start=document.querySelector('#v2Start'),end=document.querySelector('#v2End');
+    if(start&&end){
+      start.disabled=false;end.disabled=false;
+      const preventSame=changed=>{if(start.value!==end.value)return;(changed===start?end:start).value=changed===start?'gadeok':'dadaepo';toast('출발지와 목적지는 서로 다르게 선택해야 합니다.');};
+      start.addEventListener('change',()=>preventSame(start));end.addEventListener('change',()=>preventSame(end));
+    }
+    document.querySelector('#seasonPicker')?.addEventListener('change',()=>setTimeout(()=>refresh?.click(),80));
+    let slowShown=10;
+    setInterval(()=>{
+      if(selected!=='slow')return;
+      const t=svg.querySelector('#boatIcon')?.getAttribute('transform')||'';
+      const hit=t.match(/translate\(([-\d.]+),\s*([-\d.]+)/); const x=hit?Number(hit[1]):560;
+      // The slow-route protection segment is the part crossing the mapped P3/P4 approach zone only.
+      const inside=x<425&&x>360;
+      const target=inside?8:10;
+      slowShown+=((target-slowShown)*0.16);
+      if(Math.abs(target-slowShown)<.05)slowShown=target;
+      map.dataset.liveSpeed=String(slowShown);
+      const speed=document.querySelector('#speed'); if(speed)speed.innerHTML=slowShown.toFixed(1)+' <small style="font-size:11px">kn</small>';
+      const command=document.querySelector('#command'); if(command)command.innerHTML=inside?'상괭이 가능 영역 통과 중 · <b>8.0 kn까지 부드럽게 감속</b>':'감속 항로 운항 · <b>10.0 kn 유지</b>';
+    },80);
   }
   function installSeasonPicker(){
     const controls=document.querySelector('.v2-controls');
