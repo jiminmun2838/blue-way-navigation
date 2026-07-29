@@ -143,7 +143,12 @@
   $('#v2End')?.addEventListener('change', () => {
     const start = $('#v2Start'), end = $('#v2End'); if (start.value === end.value) start.value = end.value === 'dadaepo' ? 'gadeok' : 'dadaepo'; setRoute(routeId);
   });
-  const seasonSelect = $('#seasonPicker');
+  let seasonSelect = $('#seasonPicker');
+  if (!seasonSelect && $('#v2Season')) {
+    const holder = $('#v2Season');
+    holder.insertAdjacentHTML('beforeend', '<label style="display:block;margin-top:9px;font-size:10px;color:#cde6e4">계절 선택<select id="seasonPicker" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:7px;background:#062433;color:#fff;border:1px solid #4d8278"><option value="0">겨울 · 1월</option><option value="1">봄 · 5월</option><option value="2">여름 · 7–9월</option><option value="3">가을 · 11월</option></select></label>');
+    seasonSelect = $('#seasonPicker');
+  }
   if (seasonSelect) seasonSelect.addEventListener('change', (event) => {
     event.stopImmediatePropagation();
     seasonIndex = Number(seasonSelect.value); predictionVersion = 0;
